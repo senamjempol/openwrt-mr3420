@@ -53,7 +53,7 @@ jobs:
           make -j$(nproc) || make -j1 V=s
 
       - name: Upload Firmware Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: openwrt-21.02-mr3420v3-custom
           path: |
