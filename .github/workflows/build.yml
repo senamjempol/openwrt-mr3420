@@ -1,4 +1,4 @@
-name: Build OpenWrt 21.02 MR3420 v3 (Custom Config)
+name: Build OpenWrt 21.02 MR3420 v3 (8MB - Tiny Subtarget)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ jobs:
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4   # <-- Diubah dari v3 ke v4
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
@@ -28,7 +28,10 @@ jobs:
         run: |
           cd openwrt
           FILE="target/linux/ath79/image/tiny-tp-link.mk"
+          
+          # Otomatis mengubah tplink-4mlzma menjadi tplink-8mlzma dan menyisipkan IMAGE_SIZE := 7936k
           sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/ s/\$(Device\/tplink-4mlzma)/\$(Device\/tplink-8mlzma)\n  IMAGE_SIZE := 7936k/' "$FILE"
+          
           echo "Successfully patched tiny-tp-link.mk for 8MB!"
 
       - name: Update Feeds
@@ -37,17 +40,20 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Load Custom Configuration (.config)
+      - name: Generate Configuration (.config)
         run: |
-          # Pastikan file .config sudah di-upload ke root repository GitHub Anda
-          if [ -f .config ]; then
-            cp .config openwrt/.config
-            cd openwrt
-            make olddefconfig
-          else
-            echo "Error: File .config tidak ditemukan di root repository!"
-            exit 1
-          fi
+          cd openwrt
+          
+          # Atur target ke ath79, subtarget tiny, dan pilih perangkat tplink_tl-mr3420-v3
+          echo "CONFIG_TARGET_ath79=y" > .config
+          echo "CONFIG_TARGET_ath79_tiny=y" >> .config
+          echo "CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" >> .config
+          
+          # Sertakan antarmuka web LuCI dan terjemahan bahasa Indonesia
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_LUCI_LANG_id=y" >> .config
+          
+          make defconfig
 
       - name: Compile Firmware
         run: |
@@ -55,9 +61,9 @@ jobs:
           make -j$(nproc) || make -j1 V=s
 
       - name: Upload Firmware Artifacts
-        uses: actions/upload-artifact@v4   # <-- Diubah dari v3 ke v4
+        uses: actions/upload-artifact@v4
         with:
-          name: openwrt-21.02-mr3420v3-custom
+          name: openwrt-21.02-mr3420v3-8mb-tiny
           path: |
             openwrt/bin/targets/ath79/tiny/*factory*.bin
             openwrt/bin/targets/ath79/tiny/*sysupgrade*.bin
