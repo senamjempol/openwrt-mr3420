@@ -1,4 +1,4 @@
-name: Build OpenWrt 21.02 MR3420 v3 (8MB - Tiny Subtarget)
+name: Build OpenWrt 21.02 MR3420 v3 (Custom Config)
 
 on:
   workflow_dispatch:
@@ -40,20 +40,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Generate Configuration (.config)
+      - name: Load Custom Configuration (.config)
         run: |
+          # Menyalin file .config yang Anda upload ke root repository ke folder openwrt
+          cp .config openwrt/.config
           cd openwrt
-          
-          # Atur target ke ath79, subtarget tiny, dan pilih perangkat tplink_tl-mr3420-v3
-          echo "CONFIG_TARGET_ath79=y" > .config
-          echo "CONFIG_TARGET_ath79_tiny=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" >> .config
-          
-          # Sertakan antarmuka web LuCI dan terjemahan bahasa Indonesia
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_LUCI_LANG_id=y" >> .config
-          
-          make defconfig
+          make olddefconfig
 
       - name: Compile Firmware
         run: |
@@ -63,7 +55,7 @@ jobs:
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: openwrt-21.02-mr3420v3-8mb-tiny
+          name: openwrt-21.02-mr3420v3-custom
           path: |
             openwrt/bin/targets/ath79/tiny/*factory*.bin
             openwrt/bin/targets/ath79/tiny/*sysupgrade*.bin
