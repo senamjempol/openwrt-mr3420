@@ -9,7 +9,7 @@ jobs:
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4   # <-- Diubah dari v3 ke v4
 
       - name: Install Dependencies
         run: |
@@ -28,10 +28,7 @@ jobs:
         run: |
           cd openwrt
           FILE="target/linux/ath79/image/tiny-tp-link.mk"
-          
-          # Otomatis mengubah tplink-4mlzma menjadi tplink-8mlzma dan menyisipkan IMAGE_SIZE := 7936k
           sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/ s/\$(Device\/tplink-4mlzma)/\$(Device\/tplink-8mlzma)\n  IMAGE_SIZE := 7936k/' "$FILE"
-          
           echo "Successfully patched tiny-tp-link.mk for 8MB!"
 
       - name: Update Feeds
@@ -42,10 +39,15 @@ jobs:
 
       - name: Load Custom Configuration (.config)
         run: |
-          # Menyalin file .config yang Anda upload ke root repository ke folder openwrt
-          cp .config openwrt/.config
-          cd openwrt
-          make olddefconfig
+          # Pastikan file .config sudah di-upload ke root repository GitHub Anda
+          if [ -f .config ]; then
+            cp .config openwrt/.config
+            cd openwrt
+            make olddefconfig
+          else
+            echo "Error: File .config tidak ditemukan di root repository!"
+            exit 1
+          fi
 
       - name: Compile Firmware
         run: |
@@ -53,7 +55,7 @@ jobs:
           make -j$(nproc) || make -j1 V=s
 
       - name: Upload Firmware Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4   # <-- Diubah dari v3 ke v4
         with:
           name: openwrt-21.02-mr3420v3-custom
           path: |
