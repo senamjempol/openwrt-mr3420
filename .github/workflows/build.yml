@@ -30,11 +30,9 @@ jobs:
           TINY_FILE="target/linux/ath79/image/tiny-tp-link.mk"
           GEN_FILE="target/linux/ath79/image/generic-tp-link.mk"
           
-          # Hapus definisi mr3420-v3 dari file tiny
           sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY_FILE"
           sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY_FILE"
           
-          # Masukkan ke file generic menggunakan metode HEREDOC agar sintaks Makefile tetap valid
           cat << 'EOF' >> "$GEN_FILE"
 
 define Device/tplink_tl-mr3420-v3
@@ -60,16 +58,11 @@ EOF
       - name: Generate Configuration (.config)
         run: |
           cd openwrt
-          
-          # Set target ke ath79 generic dan aktifkan profil mr3420-v3
           echo "CONFIG_TARGET_ath79=y" > .config
           echo "CONFIG_TARGET_ath79_generic=y" >> .config
           echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
-          
-          # Sertakan LuCI dan Bahasa Indonesia
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_LUCI_LANG_id=y" >> .config
-          
           make defconfig
 
       - name: Compile Firmware
