@@ -1,4 +1,4 @@
-name: Build OpenWrt 21.02 MR3420 v3 (8MB - Generic Subtarget)
+name: Build OpenWrt 21.02 MR3420 v3 (8MB - Generic)
 
 on:
   workflow_dispatch:
@@ -24,15 +24,30 @@ jobs:
           cd openwrt
           git checkout openwrt-21.02
 
-      - name: Patch tp-link.mk for 8MB Flash (Generic Subtarget)
+      - name: Move MR3420 v3 to Generic and Configure for 8MB
         run: |
           cd openwrt
-          FILE="target/linux/ath79/image/tp-link.mk"
+          TINY_FILE="target/linux/ath79/image/tiny-tp-link.mk"
+          GEN_FILE="target/linux/ath79/image/generic-tp-link.mk"
           
-          # Mengubah tplink-4mlzma menjadi tplink-8mlzma untuk mr3420-v3 di file tp-link.mk
-          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/ s/\$(Device\/tplink-4mlzma)/\$(Device\/tplink-8mlzma)\n  IMAGE_SIZE := 7936k/' "$FILE"
+          # 1. Hapus definisi mr3420-v3 dari tiny-tp-link.mk agar tidak konflik
+          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY_FILE"
+          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY_FILE"
           
-          echo "Successfully patched tp-link.mk for 8MB!"
+          # 2. Tambahkan definisi mr3420-v3 versi 8MB ke generic-tp-link.mk
+          echo "" >> "$GEN_FILE"
+          echo "define Device/tplink_tl-mr3420-v3" >> "$GEN_FILE"
+          echo "  \$(Device/tplink-8mlzma)" >> "$GEN_FILE"
+          echo "  SOC := qca9531" >> "$GEN_FILE"
+          echo "  DEVICE_MODEL := TL-MR3420" >> "$GEN_FILE"
+          echo "  DEVICE_VARIANT := v3" >> "$GEN_FILE"
+          echo "  TPLINK_HWID := 0x34200003" >> "$GEN_FILE"
+          echo "  IMAGE_SIZE := 7936k" >> "$GEN_FILE"
+          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport" >> "$GEN_FILE"
+          echo "endef" >> "$GEN_FILE"
+          echo "TARGET_DEVICES += tplink_tl-mr3420-v3" >> "$GEN_FILE"
+          
+          echo "Successfully moved and patched MR3420 v3 for 8MB Generic!"
 
       - name: Update Feeds
         run: |
@@ -44,7 +59,7 @@ jobs:
         run: |
           cd openwrt
           
-          # Menggunakan subtarget GENERIC di mana makro 8MB didukung penuh
+          # Gunakan subtarget GENERIC agar muat untuk 8MB penuh
           echo "CONFIG_TARGET_ath79=y" > .config
           echo "CONFIG_TARGET_ath79_generic=y" >> .config
           echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
