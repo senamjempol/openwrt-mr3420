@@ -1,4 +1,4 @@
-name: Build OpenWrt 21.02 MR3420 v3 (8MB - Tiny Subtarget)
+name: Build OpenWrt 21.02 MR3420 v3 (8MB - Generic Subtarget)
 
 on:
   workflow_dispatch:
@@ -24,15 +24,15 @@ jobs:
           cd openwrt
           git checkout openwrt-21.02
 
-      - name: Patch tiny-tp-link.mk for 8MB Flash
+      - name: Patch tp-link.mk for 8MB Flash (Generic Subtarget)
         run: |
           cd openwrt
-          FILE="target/linux/ath79/image/tiny-tp-link.mk"
+          FILE="target/linux/ath79/image/tp-link.mk"
           
-          # Otomatis mengubah tplink-4mlzma menjadi tplink-8mlzma dan menyisipkan IMAGE_SIZE := 7936k
+          # Mengubah tplink-4mlzma menjadi tplink-8mlzma untuk mr3420-v3 di file tp-link.mk
           sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/ s/\$(Device\/tplink-4mlzma)/\$(Device\/tplink-8mlzma)\n  IMAGE_SIZE := 7936k/' "$FILE"
           
-          echo "Successfully patched tiny-tp-link.mk for 8MB!"
+          echo "Successfully patched tp-link.mk for 8MB!"
 
       - name: Update Feeds
         run: |
@@ -44,12 +44,12 @@ jobs:
         run: |
           cd openwrt
           
-          # Atur target ke ath79, subtarget tiny, dan pilih perangkat tplink_tl-mr3420-v3
+          # Menggunakan subtarget GENERIC di mana makro 8MB didukung penuh
           echo "CONFIG_TARGET_ath79=y" > .config
-          echo "CONFIG_TARGET_ath79_tiny=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" >> .config
+          echo "CONFIG_TARGET_ath79_generic=y" >> .config
+          echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
           
-          # Sertakan antarmuka web LuCI dan terjemahan bahasa Indonesia
+          # Sertakan LuCI dan Bahasa Indonesia
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_LUCI_LANG_id=y" >> .config
           
@@ -63,7 +63,7 @@ jobs:
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-21.02-mr3420v3-8mb-tiny
+          name: openwrt-21.02-mr3420v3-8mb-generic
           path: |
-            openwrt/bin/targets/ath79/tiny/*factory*.bin
-            openwrt/bin/targets/ath79/tiny/*sysupgrade*.bin
+            openwrt/bin/targets/ath79/generic/*factory*.bin
+            openwrt/bin/targets/ath79/generic/*sysupgrade*.bin
