@@ -30,24 +30,26 @@ jobs:
           TINY_FILE="target/linux/ath79/image/tiny-tp-link.mk"
           GEN_FILE="target/linux/ath79/image/generic-tp-link.mk"
           
-          # 1. Hapus definisi mr3420-v3 dari tiny-tp-link.mk agar tidak konflik
+          # Hapus definisi mr3420-v3 dari file tiny
           sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY_FILE"
           sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY_FILE"
           
-          # 2. Tambahkan definisi mr3420-v3 versi 8MB ke generic-tp-link.mk
-          echo "" >> "$GEN_FILE"
-          echo "define Device/tplink_tl-mr3420-v3" >> "$GEN_FILE"
-          echo "  \$(Device/tplink-8mlzma)" >> "$GEN_FILE"
-          echo "  SOC := qca9531" >> "$GEN_FILE"
-          echo "  DEVICE_MODEL := TL-MR3420" >> "$GEN_FILE"
-          echo "  DEVICE_VARIANT := v3" >> "$GEN_FILE"
-          echo "  TPLINK_HWID := 0x34200003" >> "$GEN_FILE"
-          echo "  IMAGE_SIZE := 7936k" >> "$GEN_FILE"
-          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport" >> "$GEN_FILE"
-          echo "endef" >> "$GEN_FILE"
-          echo "TARGET_DEVICES += tplink_tl-mr3420-v3" >> "$GEN_FILE"
+          # Masukkan ke file generic menggunakan metode HEREDOC agar sintaks Makefile tetap valid
+          cat << 'EOF' >> "$GEN_FILE"
+
+define Device/tplink_tl-mr3420-v3
+  $(Device/tplink-8mlzma)
+  SOC := qca9531
+  DEVICE_MODEL := TL-MR3420
+  DEVICE_VARIANT := v3
+  TPLINK_HWID := 0x34200003
+  IMAGE_SIZE := 7936k
+  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
+endef
+TARGET_DEVICES += tplink_tl-mr3420-v3
+EOF
           
-          echo "Successfully moved and patched MR3420 v3 for 8MB Generic!"
+          echo "Successfully moved and patched MR3420 v3 to generic-tp-link.mk!"
 
       - name: Update Feeds
         run: |
@@ -59,7 +61,7 @@ jobs:
         run: |
           cd openwrt
           
-          # Gunakan subtarget GENERIC agar muat untuk 8MB penuh
+          # Set target ke ath79 generic dan aktifkan profil mr3420-v3
           echo "CONFIG_TARGET_ath79=y" > .config
           echo "CONFIG_TARGET_ath79_generic=y" >> .config
           echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
