@@ -1,4 +1,5 @@
-name: Build OpenWrt 21.02 MR3420 v3 (8MB - Generic Correct)
+```yaml
+name: Build OpenWrt 21.02 MR3420 v3 (8MB Generic)
 
 on:
   workflow_dispatch:
@@ -6,79 +7,515 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    
+
     steps:
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+
+      # ============================================================
+      # 2. DEPENDENCIES
+      # ============================================================
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
-            python3 python3-setuptools rsync swig unzip zlib1g-dev file wget curl
 
-      - name: Clone OpenWrt Source (v21.02)
-        run: |
-          git clone https://github.com/openwrt/openwrt.git openwrt
-          cd openwrt
-          git checkout openwrt-21.02
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gcc-multilib \
+            g++-multilib \
+            gettext \
+            git \
+            libncurses5-dev \
+            libncurses-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            python3-distutils \
+            rsync \
+            swig \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl \
+            time
 
-      - name: Move MR3420 v3 to Generic with 8mlzma Macro
+
+      # ============================================================
+      # 3. CLONE OPENWRT 21.02
+      # ============================================================
+      - name: Clone OpenWrt 21.02
+        run: |
+          git clone \
+            --branch openwrt-21.02 \
+            --single-branch \
+            https://github.com/openwrt/openwrt.git \
+            openwrt
+
+          cd openwrt
+
+          echo "=========================================="
+          echo "OPENWRT VERSION"
+          echo "=========================================="
+
+          git describe --tags --always
+
+          echo ""
+          echo "Branch:"
+          git branch --show-current
+
+
+      # ============================================================
+      # 4. PATCH MR3420 V3
+      #
+      # Pindahkan device dari tiny -> generic
+      #
+      # Hardware:
+      # QCA9531
+      # 8 MB SPI flash
+      # TP-Link HWID 0x34200003
+      # Flash layout 8Mlzma
+      # ============================================================
+      - name: Patch TL-MR3420 v3 for Generic 8MB
         run: |
           cd openwrt
+
           TINY_FILE="target/linux/ath79/image/tiny-tp-link.mk"
           GEN_FILE="target/linux/ath79/image/generic-tp-link.mk"
-          
-          # Hapus definisi mr3420-v3 dari file tiny agar tidak konflik
-          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY_FILE"
-          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY_FILE"
-          
-          # Tambahkan definisi ke file generic menggunakan makro 8mlzma yang tepat untuk 8MB
-          echo "" >> "$GEN_FILE"
-          echo "define Device/tplink_tl-mr3420-v3" >> "$GEN_FILE"
-          echo "  \$(Device/tplink-8mlzma)" >> "$GEN_FILE"
-          echo "  SOC := qca9531" >> "$GEN_FILE"
-          echo "  DEVICE_MODEL := TL-MR3420" >> "$GEN_FILE"
-          echo "  DEVICE_VARIANT := v3" >> "$GEN_FILE"
-          echo "  TPLINK_HWID := 0x34200003" >> "$GEN_FILE"
-          echo "  IMAGE_SIZE := 7936k" >> "$GEN_FILE"
-          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport" >> "$GEN_FILE"
-          echo "endef" >> "$GEN_FILE"
-          echo "TARGET_DEVICES += tplink_tl-mr3420-v3" >> "$GEN_FILE"
-          
-          echo "Successfully configured MR3420 v3 in generic-tp-link.mk for 8MB!"
 
+          echo "=========================================="
+          echo "BEFORE PATCH"
+          echo "=========================================="
+
+          grep -n -A12 -B2 \
+            "define Device/tplink_tl-mr3420-v3" \
+            "$TINY_FILE" || true
+
+
+          # --------------------------------------------------------
+          # Backup file asli
+          # --------------------------------------------------------
+          cp "$TINY_FILE" "$TINY_FILE.bak"
+
+          cp "$GEN_FILE" "$GEN_FILE.bak"
+
+
+          # --------------------------------------------------------
+          # Hapus definisi MR3420 v3 dari tiny
+          # --------------------------------------------------------
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("target/linux/ath79/image/tiny-tp-link.mk")
+          s = p.read_text()
+
+          start = s.find("define Device/tplink_tl-mr3420-v3")
+
+          if start == -1:
+              raise SystemExit("MR3420 v3 tidak ditemukan di tiny-tp-link.mk")
+
+          end = s.find("TARGET_DEVICES += tplink_tl-mr3420-v3", start)
+
+          if end == -1:
+              raise SystemExit("TARGET_DEVICES MR3420 v3 tidak ditemukan")
+
+          end = s.find("\n", end)
+
+          if end == -1:
+              end = len(s)
+
+          s = s[:start] + s[end + 1:]
+
+          p.write_text(s)
+          PY
+
+
+          # --------------------------------------------------------
+          # Tambahkan MR3420 v3 ke generic
+          # --------------------------------------------------------
+          cat >> "$GEN_FILE" <<'EOF'
+
+          # ========================================================
+          # TP-Link TL-MR3420 v3
+          # 8 MB SPI Flash
+          # QCA9531
+          # ========================================================
+
+          define Device/tplink_tl-mr3420-v3
+
+            $(Device/tplink-8mlzma)
+
+            SOC := qca9531
+
+            DEVICE_MODEL := TL-MR3420
+            DEVICE_VARIANT := v3
+
+            TPLINK_HWID := 0x34200003
+
+            DEVICE_PACKAGES := \
+              kmod-usb2 \
+              kmod-usb-ledtrig-usbport
+
+            SUPPORTED_DEVICES += tl-mr3420-v3
+
+          endef
+
+          TARGET_DEVICES += tplink_tl-mr3420-v3
+
+          EOF
+
+
+          echo ""
+          echo "=========================================="
+          echo "AFTER PATCH - TINY"
+          echo "=========================================="
+
+          if grep -q "tplink_tl-mr3420-v3" "$TINY_FILE"; then
+            echo "ERROR: MR3420 v3 masih berada di tiny!"
+            exit 1
+          else
+            echo "OK: MR3420 v3 sudah dihapus dari tiny."
+          fi
+
+
+          echo ""
+          echo "=========================================="
+          echo "AFTER PATCH - GENERIC"
+          echo "=========================================="
+
+          grep -n -A20 -B2 \
+            "define Device/tplink_tl-mr3420-v3" \
+            "$GEN_FILE"
+
+
+          # --------------------------------------------------------
+          # Pastikan macro 8mlzma tersedia
+          # --------------------------------------------------------
+          echo ""
+          echo "=========================================="
+          echo "CHECK 8MLZMA MACRO"
+          echo "=========================================="
+
+          grep -n -A8 -B2 \
+            "define Device/tplink-8mlzma" \
+            target/linux/ath79/image/common-tp-link.mk
+
+
+          if ! grep -q "TPLINK_FLASHLAYOUT := 8Mlzma" \
+            target/linux/ath79/image/common-tp-link.mk; then
+
+            echo "ERROR: Macro 8Mlzma tidak ditemukan!"
+            exit 1
+          fi
+
+
+      # ============================================================
+      # 5. UPDATE FEEDS
+      # ============================================================
       - name: Update Feeds
         run: |
           cd openwrt
+
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Generate Configuration (.config)
+
+      # ============================================================
+      # 6. GENERATE CONFIG
+      # ============================================================
+      - name: Generate Configuration
         run: |
           cd openwrt
-          
-          # Gunakan subtarget GENERIC dan aktifkan perangkat mr3420-v3
-          echo "CONFIG_TARGET_ath79=y" > .config
-          echo "CONFIG_TARGET_ath79_generic=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
-          
-          # Sertakan LuCI dan Bahasa Indonesia
-          echo "CONFIG_PACKAGE_luci=y" >> .config
-          echo "CONFIG_LUCI_LANG_id=y" >> .config
-          
+
+          rm -f .config
+
+          # --------------------------------------------------------
+          # Target ATH79 GENERIC
+          # --------------------------------------------------------
+          cat > .config <<'EOF'
+          CONFIG_TARGET_ath79=y
+          CONFIG_TARGET_ath79_generic=y
+          EOF
+
+
+          # --------------------------------------------------------
+          # Jangan memilih device default secara manual.
+          #
+          # Device akan ditentukan setelah target device
+          # berhasil didaftarkan oleh image Makefile.
+          # --------------------------------------------------------
+
+
+          # --------------------------------------------------------
+          # LuCI
+          # --------------------------------------------------------
+          cat >> .config <<'EOF'
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_LUCI_LANG_id=y
+
+          EOF
+
+
+          echo "=========================================="
+          echo "RUNNING DEFCONFIG"
+          echo "=========================================="
+
           make defconfig
 
+
+      # ============================================================
+      # 7. VERIFY TARGET
+      #
+      # INI BAGIAN PALING PENTING
+      #
+      # Kalau Carambola2 terpilih, BUILD DIHENTIKAN.
+      # ============================================================
+      - name: Verify Target Device
+        run: |
+          cd openwrt
+
+          echo "=========================================="
+          echo "TARGET CONFIGURATION"
+          echo "=========================================="
+
+          grep "^CONFIG_TARGET_" .config || true
+
+          echo ""
+          echo "=========================================="
+          echo "MR3420 REFERENCES"
+          echo "=========================================="
+
+          grep -R -n \
+            "tplink_tl-mr3420-v3" \
+            target/linux/ath79/image \
+            || true
+
+
+          echo ""
+          echo "=========================================="
+          echo "CHECK DEVICE MODEL"
+          echo "=========================================="
+
+          grep -R -n \
+            "TL-MR3420" \
+            target/linux/ath79/image \
+            || true
+
+
+          echo ""
+          echo "=========================================="
+          echo "CHECK CARAMBOLA2"
+          echo "=========================================="
+
+          grep -n \
+            "carambola2" \
+            .config \
+            || true
+
+
+          # --------------------------------------------------------
+          # Pastikan target utama benar
+          # --------------------------------------------------------
+          if ! grep -q "^CONFIG_TARGET_ath79=y" .config; then
+            echo "ERROR: ath79 tidak aktif!"
+            exit 1
+          fi
+
+
+          if ! grep -q "^CONFIG_TARGET_ath79_generic=y" .config; then
+            echo "ERROR: ath79 generic tidak aktif!"
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # Pastikan MR3420 v3 terdaftar di source
+          # --------------------------------------------------------
+          if ! grep -q \
+            "TARGET_DEVICES += tplink_tl-mr3420-v3" \
+            target/linux/ath79/image/generic-tp-link.mk; then
+
+            echo "ERROR: MR3420 v3 tidak terdaftar di generic!"
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # Pastikan MR3420 v3 TIDAK berada di tiny
+          # --------------------------------------------------------
+          if grep -q \
+            "TARGET_DEVICES += tplink_tl-mr3420-v3" \
+            target/linux/ath79/image/tiny-tp-link.mk; then
+
+            echo "ERROR: MR3420 v3 masih terdaftar di tiny!"
+            exit 1
+          fi
+
+
+          # --------------------------------------------------------
+          # Pastikan 8Mlzma digunakan
+          # --------------------------------------------------------
+          if ! grep -q \
+            "TPLINK_FLASHLAYOUT := 8Mlzma" \
+            target/linux/ath79/image/common-tp-link.mk; then
+
+            echo "ERROR: 8Mlzma tidak tersedia!"
+            exit 1
+          fi
+
+
+          echo ""
+          echo "=========================================="
+          echo "TARGET CHECK PASSED"
+          echo "=========================================="
+
+          echo "Target : ath79"
+          echo "Subtarget : generic"
+          echo "Device : TL-MR3420 v3"
+          echo "SoC : QCA9531"
+          echo "Flash layout : 8Mlzma"
+
+
+      # ============================================================
+      # 8. SHOW IMAGE TARGETS
+      # ============================================================
+      - name: Show Image Targets
+        run: |
+          cd openwrt
+
+          echo "=========================================="
+          echo "AVAILABLE IMAGE TARGETS"
+          echo "=========================================="
+
+          make target/linux/compile V=s
+
+          echo ""
+          echo "=========================================="
+          echo "IMAGE TARGET LIST"
+          echo "=========================================="
+
+          make -s target/linux/image/compile V=s 2>&1 | \
+            grep -E \
+            "MR3420|mr3420|Carambola|carambola" \
+            || true
+
+
+      # ============================================================
+      # 9. DOWNLOAD PACKAGES
+      # ============================================================
+      - name: Download Packages
+        run: |
+          cd openwrt
+
+          make download \
+            -j$(nproc) \
+            V=s
+
+
+      # ============================================================
+      # 10. COMPILE
+      # ============================================================
       - name: Compile Firmware
         run: |
           cd openwrt
-          make -j$(nproc) || make -j1 V=s
 
-      - name: Upload Firmware Artifacts
+          echo "=========================================="
+          echo "FINAL CONFIG"
+          echo "=========================================="
+
+          grep "^CONFIG_TARGET_" .config
+
+
+          echo ""
+          echo "=========================================="
+          echo "START BUILD"
+          echo "=========================================="
+
+          make -j$(nproc)
+
+
+      # ============================================================
+      # 11. VERIFY OUTPUT
+      # ============================================================
+      - name: Verify Firmware Output
+        run: |
+          cd openwrt
+
+          echo "=========================================="
+          echo "BUILD OUTPUT"
+          echo "=========================================="
+
+          find bin/targets/ath79/generic \
+            -maxdepth 1 \
+            -type f \
+            -printf "%f\n" \
+            | sort
+
+
+          echo ""
+          echo "=========================================="
+          echo "MR3420 FIRMWARE"
+          echo "=========================================="
+
+          find bin/targets/ath79/generic \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -iname "*mr3420*" \
+              -o -iname "*MR3420*" \
+            \) \
+            -printf "%f\n"
+
+
+          # --------------------------------------------------------
+          # Jangan biarkan artifact kosong
+          # --------------------------------------------------------
+          COUNT=$(find bin/targets/ath79/generic \
+            -maxdepth 1 \
+            -type f \
+            \( \
+              -name "*factory*.bin" \
+              -o \
+              -name "*sysupgrade*.bin" \
+            \) \
+            | wc -l)
+
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo ""
+            echo "ERROR: Tidak ada firmware factory/sysupgrade!"
+            exit 1
+          fi
+
+
+          echo ""
+          echo "Firmware berhasil dibuat."
+
+
+      # ============================================================
+      # 12. UPLOAD ARTIFACT
+      # ============================================================
+      - name: Upload Firmware
         uses: actions/upload-artifact@v4
+
         with:
-          name: openwrt-21.02-mr3420v3-8mb-generic
+          name: openwrt-21.02-mr3420-v3-8mb
+
           path: |
+            openwrt/bin/targets/ath79/generic/*mr3420*.bin
+            openwrt/bin/targets/ath79/generic/*MR3420*.bin
             openwrt/bin/targets/ath79/generic/*factory*.bin
             openwrt/bin/targets/ath79/generic/*sysupgrade*.bin
+            openwrt/bin/targets/ath79/generic/sha256sums
+```
