@@ -128,12 +128,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure OpenWrt
+            - name: Configure OpenWrt
         run: |
           cd openwrt
 
           echo "======================================"
-          echo "CREATE CONFIG"
+          echo "GENERATE TARGET CONFIG"
           echo "======================================"
 
           rm -f .config
@@ -141,39 +141,113 @@ jobs:
           printf '%s\n' \
             'CONFIG_TARGET_ath79=y' \
             'CONFIG_TARGET_ath79_generic=y' \
-            'CONFIG_PACKAGE_luci=y' \
-            'CONFIG_LUCI_LANG_id=y' \
             > .config
 
           make defconfig
+
+          echo ""
+          echo "======================================"
+          echo "FORCE MR3420 V3"
+          echo "======================================"
+
+          printf '%s\n' \
+            'CONFIG_TARGET_ath79=y' \
+            'CONFIG_TARGET_ath79_generic=y' \
+            'CONFIG_TARGET_PROFILE="tplink_tl-mr3420-v3"' \
+            'CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y' \
+            'CONFIG_PACKAGE_luci=y' \
+            'CONFIG_LUCI_LANG_id=y' \
+            >> .config
+
+          echo ""
+          echo "======================================"
+          echo "FINALIZE CONFIG"
+          echo "======================================"
+
+          make defconfig
+
 
       - name: Verify Configuration
         run: |
           cd openwrt
 
           echo "======================================"
-          echo "FINAL CONFIG"
+          echo "TARGET CONFIGURATION"
           echo "======================================"
 
-          grep '^CONFIG_TARGET_' .config || true
+          grep '^CONFIG_TARGET_' .config
 
+          echo ""
           echo "======================================"
-          echo "MR3420 DEVICE"
-          echo "======================================"
-
-          grep -R -n "tplink_tl-mr3420-v3" \
-            target/linux/ath79/image
-
-          echo "======================================"
-          echo "CARAMBOLA CHECK"
+          echo "CHECK MR3420"
           echo "======================================"
 
-          if grep -qi "carambola2" .config; then
-            echo "ERROR: CARAMBOLA2 TERPILIH"
+          grep \
+            'CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3' \
+            .config || true
+
+          echo ""
+          echo "======================================"
+          echo "CHECK PROFILE"
+          echo "======================================"
+
+          grep \
+            '^CONFIG_TARGET_PROFILE=' \
+            .config || true
+
+          echo ""
+          echo "======================================"
+          echo "CHECK DEVICE SOURCE"
+          echo "======================================"
+
+          grep -n -A12 -B2 \
+            'define Device/tplink_tl-mr3420-v3' \
+            target/linux/ath79/image/generic-tp-link.mk
+
+          echo ""
+          echo "======================================"
+          echo "FINAL DEVICE CHECK"
+          echo "======================================"
+
+          if ! grep -q \
+            '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y' \
+            .config; then
+
+            echo "ERROR: MR3420 v3 BELUM TERPILIH!"
             exit 1
           fi
 
-          echo "OK: CARAMBOLA2 TIDAK TERPILIH"
+          echo "OK: MR3420 v3 TERPILIH."
+
+          echo ""
+          echo "======================================"
+          echo "PROFILE CHECK"
+          echo "======================================"
+
+          if ! grep -q \
+            '^CONFIG_TARGET_PROFILE="tplink_tl-mr3420-v3"' \
+            .config; then
+
+            echo "ERROR: PROFILE BUKAN MR3420 V3!"
+            exit 1
+          fi
+
+          echo "OK: PROFILE MR3420 v3."
+
+          echo ""
+          echo "======================================"
+          echo "NO CARAMBOLA SELECTION"
+          echo "======================================"
+
+          if grep -q \
+            '^CONFIG_TARGET_ath79_generic_DEVICE_.*carambola.*=y' \
+            .config; then
+
+            echo "ERROR: CARAMBOLA2 MASIH TERPILIH!"
+            exit 1
+          fi
+
+          echo "OK: Carambola2 tidak dipilih."
 
       - name: Download Sources
         run: |
