@@ -1,5 +1,4 @@
-```yaml
-name: Build OpenWrt 21.02 - TL-MR3420 v3 8MB
+name: Build OpenWrt 21.02 MR3420 v3 8MB
 
 on:
   workflow_dispatch:
@@ -9,14 +8,12 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-
           sudo apt-get install -y \
             build-essential \
             clang \
@@ -42,103 +39,111 @@ jobs:
 
       - name: Clone OpenWrt 21.02
         run: |
-          git clone --branch openwrt-21.02 \
-            --single-branch \
-            https://github.com/openwrt/openwrt.git openwrt
-
+          git clone --branch openwrt-21.02 --single-branch https://github.com/openwrt/openwrt.git openwrt
           cd openwrt
-
-          echo "OpenWrt source:"
           git describe --tags --always
 
-      - name: Patch MR3420 v3
+      - name: Check OpenWrt Source
+        run: |
+          cd openwrt
+
+          echo "======================================"
+          echo "CHECK SOURCE"
+          echo "======================================"
+
+          test -f target/linux/ath79/image/Makefile
+          test -f target/linux/ath79/image/common-tp-link.mk
+          test -f target/linux/ath79/image/tiny-tp-link.mk
+          test -f target/linux/ath79/image/generic-tp-link.mk
+
+          echo "OpenWrt source OK"
+
+      - name: Move MR3420 v3 to Generic
         run: |
           cd openwrt
 
           TINY="target/linux/ath79/image/tiny-tp-link.mk"
           GENERIC="target/linux/ath79/image/generic-tp-link.mk"
 
-          echo "=== ORIGINAL MR3420 ==="
+          echo "======================================"
+          echo "ORIGINAL MR3420 DEFINITION"
+          echo "======================================"
 
-          grep -n -A12 -B2 \
-            "tplink_tl-mr3420-v3" \
-            "$TINY" || true
+          grep -n -A12 -B2 "tplink_tl-mr3420-v3" "$TINY" || true
 
-          echo ""
-          echo "=== REMOVE MR3420 FROM TINY ==="
+          echo "======================================"
+          echo "REMOVE FROM TINY"
+          echo "======================================"
 
-          sed -i \
-            '/define Device\/tplink_tl-mr3420-v3/,/endef/d' \
-            "$TINY"
+          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY"
+          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY"
 
-          sed -i \
-            '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' \
-            "$TINY"
+          echo "======================================"
+          echo "ADD TO GENERIC"
+          echo "======================================"
 
-          echo ""
-          echo "=== ADD MR3420 TO GENERIC ==="
+          printf '%s\n' \
+            '' \
+            '# TP-Link TL-MR3420 v3 - 8MB' \
+            '' \
+            'define Device/tplink_tl-mr3420-v3' \
+            '  $(Device/tplink-8mlzma)' \
+            '  SOC := qca9531' \
+            '  DEVICE_MODEL := TL-MR3420' \
+            '  DEVICE_VARIANT := v3' \
+            '  TPLINK_HWID := 0x34200003' \
+            '  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport' \
+            'endef' \
+            '' \
+            'TARGET_DEVICES += tplink_tl-mr3420-v3' \
+            '' >> "$GENERIC"
 
-          cat >> "$GENERIC" <<'EOF'
+          echo "======================================"
+          echo "NEW MR3420 DEFINITION"
+          echo "======================================"
 
-          # TP-Link TL-MR3420 v3 - 8MB
-
-          define Device/tplink_tl-mr3420-v3
-            $(Device/tplink-8mlzma)
-            SOC := qca9531
-            DEVICE_MODEL := TL-MR3420
-            DEVICE_VARIANT := v3
-            TPLINK_HWID := 0x34200003
-            DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
-          endef
-
-          TARGET_DEVICES += tplink_tl-mr3420-v3
-
-          EOF
-
-          echo ""
-          echo "=== GENERIC MR3420 ==="
-
-          grep -n -A12 -B2 \
-            "tplink_tl-mr3420-v3" \
-            "$GENERIC"
+          grep -n -A12 -B2 "tplink_tl-mr3420-v3" "$GENERIC"
 
       - name: Check 8MB Layout
         run: |
           cd openwrt
 
-          echo "=== 8MLZMA ==="
+          echo "======================================"
+          echo "8MLZMA CHECK"
+          echo "======================================"
 
-          grep -n -A8 -B2 \
-            "define Device/tplink-8mlzma" \
+          grep -n -A8 -B2 "define Device/tplink-8mlzma" \
             target/linux/ath79/image/common-tp-link.mk
 
-          echo ""
-          echo "=== CHECK FLASH LAYOUT ==="
+          echo "======================================"
+          echo "FLASH LAYOUT"
+          echo "======================================"
 
-          grep -n \
-            "TPLINK_FLASHLAYOUT := 8Mlzma" \
+          grep -n "TPLINK_FLASHLAYOUT := 8Mlzma" \
             target/linux/ath79/image/common-tp-link.mk
 
       - name: Update Feeds
         run: |
           cd openwrt
-
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure
+      - name: Configure OpenWrt
         run: |
           cd openwrt
 
+          echo "======================================"
+          echo "CREATE CONFIG"
+          echo "======================================"
+
           rm -f .config
 
-          cat > .config <<'EOF'
-          CONFIG_TARGET_ath79=y
-          CONFIG_TARGET_ath79_generic=y
-
-          CONFIG_PACKAGE_luci=y
-          CONFIG_LUCI_LANG_id=y
-          EOF
+          printf '%s\n' \
+            'CONFIG_TARGET_ath79=y' \
+            'CONFIG_TARGET_ath79_generic=y' \
+            'CONFIG_PACKAGE_luci=y' \
+            'CONFIG_LUCI_LANG_id=y' \
+            > .config
 
           make defconfig
 
@@ -146,52 +151,47 @@ jobs:
         run: |
           cd openwrt
 
-          echo "================================"
-          echo "TARGET"
-          echo "================================"
+          echo "======================================"
+          echo "FINAL CONFIG"
+          echo "======================================"
 
-          grep "^CONFIG_TARGET_" .config
+          grep '^CONFIG_TARGET_' .config || true
 
-          echo ""
-          echo "================================"
-          echo "MR3420 SOURCE"
-          echo "================================"
+          echo "======================================"
+          echo "MR3420 DEVICE"
+          echo "======================================"
 
-          grep -R -n \
-            "tplink_tl-mr3420-v3" \
+          grep -R -n "tplink_tl-mr3420-v3" \
             target/linux/ath79/image
 
-          echo ""
-          echo "================================"
+          echo "======================================"
           echo "CARAMBOLA CHECK"
-          echo "================================"
+          echo "======================================"
 
           if grep -qi "carambola2" .config; then
-            echo "ERROR: CARAMBOLA2 TERPILIH!"
+            echo "ERROR: CARAMBOLA2 TERPILIH"
             exit 1
           fi
 
-          echo "OK: Carambola2 tidak terpilih."
+          echo "OK: CARAMBOLA2 TIDAK TERPILIH"
 
-      - name: Download
+      - name: Download Sources
         run: |
           cd openwrt
-
-          make download -j$(nproc)
+          make download -j2
 
       - name: Build Firmware
         run: |
           cd openwrt
+          make -j2 V=s
 
-          make -j$(nproc) V=s
-
-      - name: Show Firmware
+      - name: List Firmware
         run: |
           cd openwrt
 
-          echo "================================"
-          echo "BUILD RESULT"
-          echo "================================"
+          echo "======================================"
+          echo "FIRMWARE RESULT"
+          echo "======================================"
 
           find bin/targets/ath79/generic \
             -maxdepth 1 \
@@ -200,5 +200,10 @@ jobs:
             -printf "%f\n" \
             | sort
 
-      - nam
-```
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-21.02-mr3420-v3-8mb
+          path: |
+            openwrt/bin/targets/ath79/generic/*.bin
+            openwrt/bin/targets/ath79/generic/sha256sums
