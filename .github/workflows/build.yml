@@ -1,4 +1,4 @@
-name: Build OpenWrt 21.02 MR3420 v3 (8MB - Fixed)
+name: Build OpenWrt 21.02 MR3420 v3 (8MB - Generic Correct)
 
 on:
   workflow_dispatch:
@@ -24,29 +24,30 @@ jobs:
           cd openwrt
           git checkout openwrt-21.02
 
-      - name: Patch tiny-tp-link.mk for 8MB MR3420 v3
+      - name: Move MR3420 v3 to Generic with 8mlzma Macro
         run: |
           cd openwrt
-          FILE="target/linux/ath79/image/tiny-tp-link.mk"
+          TINY_FILE="target/linux/ath79/image/tiny-tp-link.mk"
+          GEN_FILE="target/linux/ath79/image/generic-tp-link.mk"
           
-          # Hapus definisi bawaan mr3420-v3 yang lama
-          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$FILE"
-          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$FILE"
+          # Hapus definisi mr3420-v3 dari file tiny agar tidak konflik
+          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY_FILE"
+          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY_FILE"
           
-          # Tambahkan kembali konfigurasi 8MB menggunakan echo yang aman dari error editor
-          echo "" >> "$FILE"
-          echo "define Device/tplink_tl-mr3420-v3" >> "$FILE"
-          echo "  \$(Device/tp-link-factory)" >> "$FILE"
-          echo "  SOC := qca9531" >> "$FILE"
-          echo "  DEVICE_MODEL := TL-MR3420" >> "$FILE"
-          echo "  DEVICE_VARIANT := v3" >> "$FILE"
-          echo "  TPLINK_HWID := 0x34200003" >> "$FILE"
-          echo "  IMAGE_SIZE := 7936k" >> "$FILE"
-          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport" >> "$FILE"
-          echo "endef" >> "$FILE"
-          echo "TARGET_DEVICES += tplink_tl-mr3420-v3" >> "$FILE"
+          # Tambahkan definisi ke file generic menggunakan makro 8mlzma yang tepat untuk 8MB
+          echo "" >> "$GEN_FILE"
+          echo "define Device/tplink_tl-mr3420-v3" >> "$GEN_FILE"
+          echo "  \$(Device/tplink-8mlzma)" >> "$GEN_FILE"
+          echo "  SOC := qca9531" >> "$GEN_FILE"
+          echo "  DEVICE_MODEL := TL-MR3420" >> "$GEN_FILE"
+          echo "  DEVICE_VARIANT := v3" >> "$GEN_FILE"
+          echo "  TPLINK_HWID := 0x34200003" >> "$GEN_FILE"
+          echo "  IMAGE_SIZE := 7936k" >> "$GEN_FILE"
+          echo "  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport" >> "$GEN_FILE"
+          echo "endef" >> "$GEN_FILE"
+          echo "TARGET_DEVICES += tplink_tl-mr3420-v3" >> "$GEN_FILE"
           
-          echo "Successfully patched tiny-tp-link.mk with 8MB size!"
+          echo "Successfully configured MR3420 v3 in generic-tp-link.mk for 8MB!"
 
       - name: Update Feeds
         run: |
@@ -58,10 +59,12 @@ jobs:
         run: |
           cd openwrt
           
+          # Gunakan subtarget GENERIC dan aktifkan perangkat mr3420-v3
           echo "CONFIG_TARGET_ath79=y" > .config
-          echo "CONFIG_TARGET_ath79_tiny=y" >> .config
-          echo "CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" >> .config
+          echo "CONFIG_TARGET_ath79_generic=y" >> .config
+          echo "CONFIG_TARGET_DEVICE_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" >> .config
           
+          # Sertakan LuCI dan Bahasa Indonesia
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_LUCI_LANG_id=y" >> .config
           
@@ -75,7 +78,7 @@ jobs:
       - name: Upload Firmware Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-21.02-mr3420v3-8mb-tiny
+          name: openwrt-21.02-mr3420v3-8mb-generic
           path: |
-            openwrt/bin/targets/ath79/tiny/*factory*.bin
-            openwrt/bin/targets/ath79/tiny/*sysupgrade*.bin
+            openwrt/bin/targets/ath79/generic/*factory*.bin
+            openwrt/bin/targets/ath79/generic/*sysupgrade*.bin
