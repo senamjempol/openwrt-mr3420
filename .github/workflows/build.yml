@@ -1,4 +1,4 @@
-name: OpenWrt 21.02 MR3420 v3 8MB
+name: Build OpenWrt 21.02 MR3420 v3 8MB
 
 on:
   workflow_dispatch:
@@ -12,32 +12,84 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget curl
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            g++ \
+            gawk \
+            gcc-multilib \
+            g++-multilib \
+            gettext \
+            git \
+            libncurses5-dev \
+            libssl-dev \
+            python3 \
+            python3-setuptools \
+            rsync \
+            swig \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl
 
       - name: Clone OpenWrt 21.02
         run: |
-          git clone --depth 1 --branch openwrt-21.02 https://github.com/openwrt/openwrt.git openwrt
+          git clone \
+            --branch openwrt-21.02 \
+            --single-branch \
+            https://github.com/openwrt/openwrt.git \
+            openwrt
 
-      - name: Patch MR3420 v3
+      - name: Patch MR3420 v3 8MB
         run: |
           cd openwrt
 
-          TINY=target/linux/ath79/image/tiny-tp-link.mk
-          GENERIC=target/linux/ath79/image/generic-tp-link.mk
+          TINY="target/linux/ath79/image/tiny-tp-link.mk"
+          GENERIC="target/linux/ath79/image/generic-tp-link.mk"
+          DTS="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
 
-          echo "Checking original MR3420..."
+          echo "======================================"
+          echo "PATCH DTS 8MB"
+          echo "======================================"
 
-          grep -n -A10 "define Device/tplink_tl-mr3420-v3" "$TINY"
+          sed -i \
+            's/reg = <0x020000 0x3d0000>/reg = <0x020000 0x7d0000>/' \
+            "$DTS"
 
-          echo "Removing MR3420 from tiny..."
+          sed -i \
+            's/partition@3f0000/partition@7f0000/' \
+            "$DTS"
 
-          sed -i '/define Device\/tplink_tl-mr3420-v3/,/endef/d' "$TINY"
-          sed -i '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' "$TINY"
+          sed -i \
+            's/reg = <0x3f0000 0x010000>/reg = <0x7f0000 0x010000>/' \
+            "$DTS"
 
-          echo "Adding MR3420 to generic..."
+          echo "DTS after patch:"
+          grep -n -A22 "partitions" "$DTS"
+
+
+          echo "======================================"
+          echo "REMOVE MR3420 FROM TINY"
+          echo "======================================"
+
+          sed -i \
+            '/define Device\/tplink_tl-mr3420-v3/,/endef/d' \
+            "$TINY"
+
+          sed -i \
+            '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' \
+            "$TINY"
+
+
+          echo "======================================"
+          echo "ADD MR3420 TO GENERIC"
+          echo "======================================"
 
           cat >> "$GENERIC" <<'EOF'
 
@@ -48,19 +100,44 @@ jobs:
             DEVICE_VARIANT := v3
             TPLINK_HWID := 0x34200003
             DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
+            SUPPORTED_DEVICES += tl-mr3420-v3
           endef
 
           TARGET_DEVICES += tplink_tl-mr3420-v3
 
           EOF
 
-          echo "Checking patched device..."
 
-          grep -n -A12 "define Device/tplink_tl-mr3420-v3" "$GENERIC"
+          echo "======================================"
+          echo "CHECK 8MLZMA"
+          echo "======================================"
 
-      - name: Configure target
+          grep -n -A5 \
+            "define Device/tplink-8mlzma" \
+            target/linux/ath79/image/common-tp-link.mk
+
+
+          echo "======================================"
+          echo "CHECK MR3420"
+          echo "======================================"
+
+          grep -n -A12 \
+            "define Device/tplink_tl-mr3420-v3" \
+            "$GENERIC"
+
+
+      - name: Update Feeds
         run: |
           cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+
+      - name: Configure
+        run: |
+          cd openwrt
+
+          rm -f .config
 
           cat > .config <<'EOF'
           CONFIG_TARGET_ath79=y
@@ -73,58 +150,76 @@ jobs:
 
           make defconfig
 
-          echo "Final target configuration:"
+
+      - name: Verify Target
+        run: |
+          cd openwrt
+
+          echo "======================================"
+          echo "TARGET"
+          echo "======================================"
+
           grep "^CONFIG_TARGET_ath79" .config
 
-      - name: Verify MR3420 selection
-        run: |
-          cd openwrt
+          echo "======================================"
+          echo "MR3420"
+          echo "======================================"
 
-          echo "Checking MR3420 configuration..."
+          grep \
+            "CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3" \
+            .config
 
-          if grep -q "^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y" .config; then
-            echo "MR3420 v3 selected"
-          else
-            echo "MR3420 v3 was not selected"
-            exit 1
-          fi
+          echo "======================================"
+          echo "DTS PARTITION"
+          echo "======================================"
 
-          echo "Checking device source..."
+          grep -n -A25 \
+            "partitions" \
+            target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
 
-          if grep -q "TARGET_DEVICES += tplink_tl-mr3420-v3" target/linux/ath79/image/generic-tp-link.mk; then
-            echo "MR3420 v3 found in generic image definition"
-          else
-            echo "MR3420 v3 not found"
-            exit 1
-          fi
 
-      - name: Update feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: Download sources
+      - name: Download
         run: |
           cd openwrt
           make download -j2
 
-      - name: Build firmware
+
+      - name: Build
         run: |
           cd openwrt
           make -j2 V=s
 
-      - name: Show firmware
+
+      - name: Show Firmware
         run: |
           cd openwrt
 
-          echo "Firmware files:"
-          find bin/targets/ath79/generic -maxdepth 1 -type f -name "*.bin" -printf "%f\n"
+          echo "======================================"
+          echo "FIRMWARE"
+          echo "======================================"
 
-      - name: Upload firmware
+          ls -lh \
+            bin/targets/ath79/generic/
+
+
+      - name: Check Firmware Size
+        run: |
+          cd openwrt
+
+          echo "======================================"
+          echo "BIN SIZE"
+          echo "======================================"
+
+          ls -lh \
+            bin/targets/ath79/generic/*.bin
+
+
+      - name: Upload Firmware
         uses: actions/upload-artifact@v4
+
         with:
           name: openwrt-21.02-mr3420-v3-8mb
+
           path: |
             openwrt/bin/targets/ath79/generic/*.bin
             openwrt/bin/targets/ath79/generic/sha256sums
