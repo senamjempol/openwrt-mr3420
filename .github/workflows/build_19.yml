@@ -1,4 +1,4 @@
-name: Build OpenWrt 19.07.9 - TP-Link TL-MR3420 v3 8MB
+name: Build OpenWrt 19.07.9 - TL-MR3420 v3 8MB
 
 on:
   workflow_dispatch:
@@ -9,13 +9,9 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1. INSTALL DEPENDENCIES
-      # ============================================================
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
-
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential \
             clang \
@@ -40,23 +36,17 @@ jobs:
             time \
             ccache
 
-      # ============================================================
-      # 2. DOWNLOAD OPENWRT 19.07.9
-      # ============================================================
-      - name: Clone OpenWrt 19.07.9
+      - name: Clone OpenWrt
         run: |
           git clone --depth=1 --branch v19.07.9 \
             https://github.com/openwrt/openwrt.git openwrt
 
-      # ============================================================
-      # 3. BUILD PYTHON 2.7
-      # OpenWrt 19.07.9 membutuhkan python 2.x
-      # ============================================================
-      - name: Install Python 2.7.18
+      - name: Install Python 2.7
         run: |
           cd /tmp
 
-          wget -q https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+          wget -q \
+            https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
 
           tar xf Python-2.7.18.tgz
 
@@ -70,40 +60,33 @@ jobs:
 
           sudo make altinstall
 
-          sudo ln -sf /usr/local/bin/python2.7 /usr/local/bin/python
+          sudo ln -sf \
+            /usr/local/bin/python2.7 \
+            /usr/local/bin/python
 
           python --version
 
-      # ============================================================
-      # 4. PATCH DEVICE MR3420 v3
-      # ============================================================
-      - name: Configure TL-MR3420 v3 8MB device
+      - name: Check existing MR3420 files
         working-directory: openwrt
         run: |
-
-          echo "=============================================="
-          echo "CHECKING EXISTING MR3420 FILES"
-          echo "=============================================="
-
-          echo ""
           echo "DTS:"
-          ls -lh target/linux/ath79/dts/ | grep -i mr3420 || true
+          find target/linux/ath79/dts \
+            -iname "*mr3420*" \
+            -print
 
-          echo ""
-          echo "IMAGE MK:"
+          echo
+          echo "IMAGE DEFINITIONS:"
           grep -R -n \
             "tplink_tl-mr3420-v3" \
             target/linux/ath79/image \
             || true
 
-          # --------------------------------------------------------
-          # Pastikan direktori DTS ada
-          # --------------------------------------------------------
+      - name: Configure MR3420 device
+        working-directory: openwrt
+        run: |
+
           mkdir -p target/linux/ath79/dts
 
-          # --------------------------------------------------------
-          # Buat DTS MR3420 v3
-          # --------------------------------------------------------
           cat > target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts <<'EOF'
 /dts-v1/;
 
@@ -131,14 +114,11 @@ jobs:
         usb {
             label = "green:usb";
             gpios = <&gpio 8 GPIO_ACTIVE_LOW>;
-            trigger-sources = <&ehci_port1>;
-            linux,default-trigger = "usbport";
         };
 
         wlan {
             label = "green:wlan";
             gpios = <&gpio 9 GPIO_ACTIVE_LOW>;
-            linux,default-trigger = "phy0tpt";
         };
     };
 
@@ -155,16 +135,6 @@ jobs:
             label = "WPS";
             linux,code = <KEY_WPS_BUTTON>;
             gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
-        };
-    };
-
-    gpio-export {
-        compatible = "gpio-export";
-
-        usb-power {
-            gpio-export,name = "usb-power";
-            gpio-export,output = <1>;
-            gpios = <&gpio 7 GPIO_ACTIVE_HIGH>;
         };
     };
 };
@@ -210,22 +180,14 @@ jobs:
     status = "okay";
 };
 
-&usb_phy {
-    status = "okay";
-};
-
 &wmac {
     status = "okay";
 };
-
 EOF
 
-          # --------------------------------------------------------
-          # Tambahkan profile MR3420 v3 jika belum ada
-          # --------------------------------------------------------
-
-          if ! grep -q "define Device/tplink_tl-mr3420-v3" \
-              target/linux/ath79/image/tiny-tp-link.mk
+          if ! grep -q \
+            "define Device/tplink_tl-mr3420-v3" \
+            target/linux/ath79/image/tiny-tp-link.mk
           then
 
             cat >> target/linux/ath79/image/tiny-tp-link.mk <<'EOF'
@@ -243,211 +205,113 @@ endef
 TARGET_DEVICES += tplink_tl-mr3420-v3
 
 EOF
-
           fi
 
-          # --------------------------------------------------------
-          # Pastikan profile benar-benar ada
-          # --------------------------------------------------------
-
-          echo ""
-          echo "=============================================="
-          echo "MR3420 DEVICE DEFINITION"
-          echo "=============================================="
+          echo
+          echo "=== MR3420 DEVICE ==="
 
           grep -A12 \
             "define Device/tplink_tl-mr3420-v3" \
             target/linux/ath79/image/tiny-tp-link.mk
 
-          echo ""
-          echo "TARGET DEVICES:"
-          grep -n \
-            "tplink_tl-mr3420-v3" \
-            target/linux/ath79/image/tiny-tp-link.mk
-
-      # ============================================================
-      # 5. UPDATE FEEDS
-      # ============================================================
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ============================================================
-      # 6. BUAT CONFIG
-      # ============================================================
-      - name: Create MR3420 configuration
+      - name: Create configuration
         working-directory: openwrt
         run: |
-
-          rm -f .config
 
           cat > .config <<'EOF'
+CONFIG_TARGET_ath79=y
+CONFIG_TARGET_ath79_tiny=y
+CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y
 
-          # ==================================================
-          # TARGET
-          # ==================================================
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
 
-          CONFIG_TARGET_ath79=y
-          CONFIG_TARGET_ath79_tiny=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
 
-          CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y
+CONFIG_PACKAGE_kmod-ath9k=y
+CONFIG_PACKAGE_wpad-mini=y
 
-          # ==================================================
-          # BASE SYSTEM
-          # ==================================================
+CONFIG_PACKAGE_kmod-usb2=y
+CONFIG_PACKAGE_kmod-usb-ledtrig-usbport=y
+EOF
 
-          CONFIG_TARGET_ROOTFS_SQUASHFS=y
-
-          # ==================================================
-          # LUCI
-          # ==================================================
-
-          CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-ssl=y
-
-          # ==================================================
-          # WIFI
-          # ==================================================
-
-          CONFIG_PACKAGE_kmod-ath9k=y
-          CONFIG_PACKAGE_wpad-mini=y
-
-          # ==================================================
-          # USB
-          # ==================================================
-
-          CONFIG_PACKAGE_kmod-usb2=y
-          CONFIG_PACKAGE_kmod-usb-ledtrig-usbport=y
-
-          # ==================================================
-          # FILESYSTEM
-          # ==================================================
-
-          CONFIG_PACKAGE_kmod-fs-ext4=y
-
-          EOF
-
-          echo ""
-          echo "=============================================="
-          echo "INITIAL CONFIG"
-          echo "=============================================="
-
-          grep -E \
-            'CONFIG_TARGET_ath79|CONFIG_TARGET_DEVICE' \
-            .config
-
-      # ============================================================
-      # 7. DEFCONFIG
-      # ============================================================
-      - name: Run defconfig
-        working-directory: openwrt
-        run: |
+          echo "=== BEFORE DEFCONFIG ==="
+          cat .config
 
           make defconfig
 
-          echo ""
-          echo "=============================================="
-          echo "FINAL TARGET CONFIG"
-          echo "=============================================="
+          echo
+          echo "=== AFTER DEFCONFIG ==="
 
           grep -E \
-            'CONFIG_TARGET_ath79|CONFIG_TARGET_DEVICE' \
+            "CONFIG_TARGET_ath79|CONFIG_TARGET_DEVICE" \
             .config
 
-          echo ""
-          echo "=============================================="
-          echo "CHECK MR3420 CONFIG"
-          echo "=============================================="
-
-          if grep -q \
-            '^CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' \
-            .config
-          then
-            echo "MR3420 v3 PROFILE = SELECTED"
-          else
-            echo "ERROR: MR3420 v3 PROFILE TIDAK TERPILIH!"
-            exit 1
-          fi
-
-      # ============================================================
-      # 8. CHECK TARGET DEVICE LIST
-      # ============================================================
-      - name: Verify target device
+      - name: Verify MR3420 profile
         working-directory: openwrt
         run: |
 
-          echo "=============================================="
-          echo "CHECK TARGET DEVICE"
-          echo "=============================================="
+          if grep -q \
+            "^CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" \
+            .config
+          then
+            echo
+            echo "================================"
+            echo "MR3420 V3 PROFILE SELECTED"
+            echo "================================"
+          else
+            echo
+            echo "================================"
+            echo "ERROR: MR3420 PROFILE TIDAK DIPILIH"
+            echo "================================"
+            exit 1
+          fi
 
-          make -s target/linux/compile V=s \
-            2>&1 | tee /tmp/target-check.log
-
-          echo ""
-          echo "MR3420 references:"
-          grep -i \
-            "mr3420" \
-            /tmp/target-check.log \
-            || true
-
-      # ============================================================
-      # 9. DOWNLOAD SOURCES
-      # ============================================================
       - name: Download packages
         working-directory: openwrt
         run: |
           make download -j4 V=s
 
-      # ============================================================
-      # 10. BUILD
-      # ============================================================
       - name: Build OpenWrt
         working-directory: openwrt
         run: |
-
-          echo "=============================================="
-          echo "START BUILD"
-          echo "=============================================="
-
           make -j$(nproc) V=s
 
-      # ============================================================
-      # 11. VERIFY OUTPUT
-      # ============================================================
-      - name: Verify firmware output
+      - name: Inspect build result
         working-directory: openwrt
         run: |
 
-          echo ""
-          echo "=============================================="
+          echo
+          echo "================================"
           echo "TARGET DIRECTORY"
-          echo "=============================================="
+          echo "================================"
 
           find bin/targets \
-            -maxdepth 4 \
             -type f \
-            -printf '%s %p\n' \
+            -printf "%s %p\n" \
             | sort -nr \
-            | head -100 \
-            | numfmt --field=1 --to=iec
+            | head -100
 
-          echo ""
-          echo "=============================================="
-          echo "ALL MR3420 FILES"
-          echo "=============================================="
+          echo
+          echo "================================"
+          echo "MR3420 FILES"
+          echo "================================"
 
           find bin/targets \
             -type f \
-            | grep -i \
-              -E 'mr3420|3420' \
+            | grep -i "mr3420" \
             || true
 
-          echo ""
-          echo "=============================================="
-          echo "IMAGE FILES"
-          echo "=============================================="
+          echo
+          echo "================================"
+          echo "ALL IMAGE FILES"
+          echo "================================"
 
           find bin/targets \
             -type f \
@@ -459,129 +323,70 @@ EOF
             \) \
             -exec ls -lh {} \;
 
-          echo ""
-          echo "=============================================="
-          echo "TARGET SIZE"
-          echo "=============================================="
-
-          du -sh bin/targets
-
-      # ============================================================
-      # 12. EXTRACT ONLY MR3420
-      # ============================================================
-      - name: Collect only MR3420 firmware
+      - name: Collect MR3420 firmware
         working-directory: openwrt
         run: |
 
           rm -rf firmware
           mkdir -p firmware
 
-          echo "=============================================="
-          echo "SEARCH MR3420 FIRMWARE"
-          echo "=============================================="
-
           find bin/targets \
             -type f \
             \( \
-              -name "*mr3420*.bin" \
-              -o -name "*mr3420*.img" \
-              -o -name "*mr3420*.img.gz" \
-              -o -name "*mr3420*.itb" \
-            \) \
-            -print
-
-          # --------------------------------------------------------
-          # Copy firmware MR3420 saja
-          # --------------------------------------------------------
-
-          find bin/targets \
-            -type f \
-            \( \
-              -name "*mr3420*.bin" \
-              -o -name "*mr3420*.img" \
-              -o -name "*mr3420*.img.gz" \
-              -o -name "*mr3420*.itb" \
+              -iname "*mr3420*.bin" \
+              -o -iname "*mr3420*.img" \
+              -o -iname "*mr3420*.img.gz" \
+              -o -iname "*mr3420*.itb" \
             \) \
             -exec cp {} firmware/ \;
 
-          echo ""
-          echo "=============================================="
-          echo "COLLECTED FILES"
-          echo "=============================================="
+          echo
+          echo "================================"
+          echo "COLLECTED FIRMWARE"
+          echo "================================"
 
           ls -lah firmware
-
-          # --------------------------------------------------------
-          # HARUS ADA FILE
-          # --------------------------------------------------------
 
           COUNT=$(find firmware -type f | wc -l)
 
           if [ "$COUNT" -eq 0 ]; then
-            echo ""
-            echo "ERROR:"
-            echo "Tidak ada firmware MR3420 v3!"
-            echo ""
-            echo "Build dihentikan agar tidak menghasilkan"
-            echo "artifact ratusan MB / GB."
+            echo
+            echo "ERROR: FIRMWARE MR3420 TIDAK DITEMUKAN"
             exit 1
           fi
 
-          # --------------------------------------------------------
-          # Jangan sampai artifact berisi source/build tree
-          # --------------------------------------------------------
+          SIZE=$(du -sk firmware | awk '{print $1}')
 
-          TOTAL=$(du -sk firmware | awk '{print $1}')
+          echo
+          echo "Firmware size: ${SIZE} KB"
 
-          echo ""
-          echo "Firmware directory size:"
-          echo "${TOTAL} KB"
-
-          if [ "$TOTAL" -gt 20000 ]; then
-            echo ""
-            echo "ERROR: firmware directory terlalu besar!"
-            echo "Kemungkinan file yang salah ikut tercopy."
+          if [ "$SIZE" -gt 20000 ]; then
+            echo
+            echo "ERROR: FIRMWARE DIRECTORY TERLALU BESAR"
             exit 1
           fi
 
-      # ============================================================
-      # 13. SHA256
-      # ============================================================
-      - name: Generate SHA256
+      - name: Generate checksums
         working-directory: openwrt
         run: |
-
           cd firmware
-
           sha256sum * > sha256sums.txt
-
-          echo ""
           cat sha256sums.txt
 
-      # ============================================================
-      # 14. FINAL CHECK
-      # ============================================================
-      - name: Final artifact check
+      - name: Final check
         working-directory: openwrt
         run: |
+          echo
+          echo "================================"
+          echo "FINAL FILES"
+          echo "================================"
 
-          echo "=============================================="
-          echo "FINAL FIRMWARE"
-          echo "=============================================="
+          ls -lah firmware
 
-          find firmware \
-            -maxdepth 1 \
-            -type f \
-            -exec ls -lh {} \;
-
-          echo ""
-          echo "Total:"
+          echo
           du -sh firmware
 
-      # ============================================================
-      # 15. UPLOAD ARTIFACT
-      # ============================================================
-      - name: Upload MR3420 firmware
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt-19.07.9-TL-MR3420-v3-8MB
