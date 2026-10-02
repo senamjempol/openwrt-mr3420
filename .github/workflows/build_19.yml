@@ -1,4 +1,4 @@
-name: Build OpenWrt 19.07.9 - TL-MR3420 v3 8MB
+name: Build OpenWrt 19.07.9 - TP-Link TL-MR3420 v3 8MB
 
 on:
   workflow_dispatch:
@@ -9,6 +9,9 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # 1. DEPENDENCIES
+      # ============================================================
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -45,6 +48,10 @@ jobs:
             subversion \
             device-tree-compiler
 
+      # ============================================================
+      # 2. PYTHON 2.7
+      # OpenWrt 19.07 membutuhkan Python 2
+      # ============================================================
       - name: Install Python 2.7
         run: |
           cd /tmp
@@ -52,6 +59,7 @@ jobs:
           wget -q https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
 
           tar -xzf Python-2.7.18.tgz
+
           cd Python-2.7.18
 
           ./configure \
@@ -59,14 +67,21 @@ jobs:
             --without-ensurepip
 
           make -j2
+
           sudo make install
 
           sudo ln -sf /opt/python2/bin/python2.7 /usr/local/bin/python
           sudo ln -sf /opt/python2/bin/python2.7 /usr/local/bin/python2
 
-          /usr/local/bin/python --version
-          /usr/local/bin/python2 --version
+          echo "Python version:"
+          /opt/python2/bin/python2.7 --version
 
+          echo "Python default:"
+          /usr/local/bin/python --version
+
+      # ============================================================
+      # 3. CLONE OPENWRT 19.07.9
+      # ============================================================
       - name: Clone OpenWrt 19.07.9
         run: |
           git clone \
@@ -74,33 +89,43 @@ jobs:
             --single-branch \
             https://github.com/openwrt/openwrt.git
 
-      - name: Enter OpenWrt directory
+      # ============================================================
+      # 4. CHECK SOURCE
+      # ============================================================
+      - name: Check OpenWrt source
         working-directory: openwrt
         run: |
-          echo "OpenWrt source:"
+          echo "OpenWrt version:"
           git describe --tags --always
 
+          echo
+          echo "Checking ath79 files..."
+
+          find target/linux/ath79 -type f | \
+            grep -E 'mr3420|tiny-tp-link|generic-tp-link' || true
+
+          echo
+          echo "Checking tplink-8mlzma..."
+
+          grep -R -n "tplink-8mlzma" \
+            target/linux/ath79 || true
+
+      # ============================================================
+      # 5. UPDATE FEEDS
+      # ============================================================
       - name: Update feeds
         working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Check source files
-        working-directory: openwrt
-        run: |
-          echo "Checking ath79 files..."
-
-          find target/linux/ath79 -type f | grep -E \
-            'mr3420|tiny-tp-link|generic-tp-link' || true
-
-          echo
-          echo "Checking 8Mlzma:"
-          grep -R -n "tplink-8mlzma" target/linux/ath79 || true
-
+      # ============================================================
+      # 6. CREATE DTS
+      # ============================================================
       - name: Create TL-MR3420 v3 DTS
         working-directory: openwrt
         run: |
+
           cat > target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts <<'EOF'
           #include "qca953x.dtsi"
 
@@ -156,6 +181,7 @@ jobs:
 
                   partitions {
                       compatible = "fixed-partitions";
+
                       #address-cells = <1>;
                       #size-cells = <1>;
 
@@ -189,13 +215,17 @@ jobs:
           };
           EOF
 
+      # ============================================================
+      # 7. ADD DEVICE DEFINITION
+      # ============================================================
       - name: Add TL-MR3420 v3 device definition
         working-directory: openwrt
         run: |
+
           FILE="target/linux/ath79/image/tiny-tp-link.mk"
 
           if [ ! -f "$FILE" ]; then
-            echo "ERROR: $FILE tidak ditemukan"
+            echo "ERROR: $FILE tidak ditemukan!"
             exit 1
           fi
 
@@ -213,16 +243,33 @@ jobs:
 
           EOF
 
-          echo "Device definition:"
+          echo "=========================================="
+          echo "MR3420 v3 DEVICE DEFINITION"
+          echo "=========================================="
+
           tail -30 "$FILE"
 
-      - name: Create configuration
+      # ============================================================
+      # 8. CREATE CONFIG
+      # ============================================================
+      - name: Create OpenWrt configuration
         working-directory: openwrt
         run: |
+
           cat > .config <<'EOF'
+
+          # ========================================================
+          # TARGET
+          # ========================================================
+
           CONFIG_TARGET_ath79=y
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3-8m=y
+
+
+          # ========================================================
+          # LUCi
+          # ========================================================
 
           CONFIG_PACKAGE_luci-base=y
           CONFIG_PACKAGE_luci-mod-admin-full=y
@@ -231,80 +278,213 @@ jobs:
           CONFIG_PACKAGE_uhttpd=y
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
 
+
+          # ========================================================
+          # OPENNDS
+          # ========================================================
+
           CONFIG_PACKAGE_opennds=y
+
+
+          # ========================================================
+          # DNSMASQ FULL
+          # ========================================================
 
           CONFIG_PACKAGE_dnsmasq=n
           CONFIG_PACKAGE_dnsmasq-full=y
 
+
+          # ========================================================
+          # USB
+          # ========================================================
+
           CONFIG_PACKAGE_kmod-usb-core=y
           CONFIG_PACKAGE_kmod-usb2=y
+
           CONFIG_PACKAGE_kmod-usb-net=y
           CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
           CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
           CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
           CONFIG_PACKAGE_kmod-usb-wdm=y
+
           CONFIG_PACKAGE_usb-modeswitch=y
+
+
+          # ========================================================
+          # DISABLE IPV6
+          # ========================================================
 
           CONFIG_PACKAGE_odhcp6c=n
           CONFIG_PACKAGE_odhcpd-ipv6only=n
           CONFIG_PACKAGE_luci-proto-ipv6=n
+
           CONFIG_IPV6=n
           CONFIG_KERNEL_IPV6=n
 
+
+          # ========================================================
+          # BUILD
+          # ========================================================
+
           CONFIG_DEVEL=y
-          CONFIG_CCACHE=y
+
           EOF
 
+      # ============================================================
+      # 9. DEFCONFIG
+      # ============================================================
       - name: Generate configuration
         working-directory: openwrt
         run: |
+
           export PATH="/usr/local/bin:/opt/python2/bin:$PATH"
 
+          echo "Python:"
           python --version
+
+          echo
+          echo "Python 2:"
           python2 --version
+
+          echo
+          echo "Running make defconfig..."
 
           make defconfig
 
-      - name: Show final target configuration
+      # ============================================================
+      # 10. SHOW FINAL CONFIG
+      # ============================================================
+      - name: Show final configuration
         working-directory: openwrt
         run: |
-          echo "===== TARGET ====="
+
+          echo "=========================================="
+          echo "TARGET"
+          echo "=========================================="
+
           grep -E \
             'CONFIG_TARGET_ath79|CONFIG_TARGET_.*DEVICE_tplink' \
             .config || true
 
           echo
-          echo "===== PACKAGES ====="
+          echo "=========================================="
+          echo "LUCi / OPENNDS / DNSMASQ"
+          echo "=========================================="
+
           grep -E \
-            'CONFIG_PACKAGE_(luci|opennds|dnsmasq|kmod-usb|usb-modeswitch)' \
+            'CONFIG_PACKAGE_(luci|opennds|dnsmasq)' \
             .config || true
 
+          echo
+          echo "=========================================="
+          echo "USB"
+          echo "=========================================="
+
+          grep -E \
+            'CONFIG_PACKAGE_(kmod-usb|usb-modeswitch)' \
+            .config || true
+
+          echo
+          echo "=========================================="
+          echo "IPV6"
+          echo "=========================================="
+
+          grep -E \
+            'CONFIG_(IPV6|KERNEL_IPV6|PACKAGE_odhcp|PACKAGE_luci-proto-ipv6)' \
+            .config || true
+
+      # ============================================================
+      # 11. DOWNLOAD
+      # ============================================================
       - name: Download sources
         working-directory: openwrt
         run: |
+
           export PATH="/usr/local/bin:/opt/python2/bin:$PATH"
 
           make download -j4 V=s
 
+      # ============================================================
+      # 12. BUILD
+      # ============================================================
       - name: Build firmware
         working-directory: openwrt
         run: |
+
           export PATH="/usr/local/bin:/opt/python2/bin:$PATH"
 
           make -j2 V=s
 
-      - name: List firmware
+      # ============================================================
+      # 13. INSPECT OUTPUT
+      # ============================================================
+      - name: Inspect firmware output
         working-directory: openwrt
         run: |
-          echo "===== BUILD OUTPUT ====="
-          find bin/targets/ath79 -type f -printf '%p %k KB\n' | sort
 
-      - name: Upload firmware
+          echo "=========================================="
+          echo "OUTPUT DIRECTORY SIZE"
+          echo "=========================================="
+
+          du -sh bin/targets/ath79/* || true
+
+          echo
+          echo "=========================================="
+          echo "ALL FILES"
+          echo "=========================================="
+
+          find bin/targets/ath79 \
+            -type f \
+            -printf '%s bytes  %p\n' \
+            | sort -n
+
+          echo
+          echo "=========================================="
+          echo "BIN FILES"
+          echo "=========================================="
+
+          find bin/targets/ath79 \
+            -type f \
+            -name "*.bin" \
+            -exec ls -lh {} \;
+
+      # ============================================================
+      # 14. CREATE SMALL ARTIFACT DIRECTORY
+      # ============================================================
+      - name: Prepare firmware artifact
+        working-directory: openwrt
+        run: |
+
+          rm -rf /tmp/mr3420-firmware
+          mkdir -p /tmp/mr3420-firmware
+
+          echo "Searching firmware..."
+
+          find bin/targets/ath79 \
+            -type f \
+            -name "*.bin" \
+            -exec cp {} /tmp/mr3420-firmware/ \;
+
+          echo
+          echo "Firmware files:"
+          ls -lh /tmp/mr3420-firmware
+
+          echo
+          echo "Total firmware size:"
+          du -sh /tmp/mr3420-firmware
+
+          if [ -z "$(find /tmp/mr3420-firmware -type f -name '*.bin')" ]; then
+            echo "ERROR: Tidak ada firmware .bin!"
+            exit 1
+          fi
+
+      # ============================================================
+      # 15. UPLOAD ONLY FIRMWARE
+      # ============================================================
+      - name: Upload firmware only
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt-19.07.9-TL-MR3420-v3-8MB
-          path: |
-            openwrt/bin/targets/ath79/**/*.bin
-            openwrt/bin/targets/ath79/**/*.manifest
-            openwrt/bin/targets/ath79/**/sha256sums
+          path: /tmp/mr3420-firmware/*.bin
           if-no-files-found: error
+          compression-level: 9
