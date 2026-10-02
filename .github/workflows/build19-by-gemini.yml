@@ -136,7 +136,7 @@ jobs:
           CONFIG_LUCI_LANG_id=y
           EOF
 
-          make defconfig
+          FORCE=1 make defconfig
 
 
       - name: Verify Target
@@ -169,13 +169,13 @@ jobs:
       - name: Download
         run: |
           cd openwrt
-          make download -j2
+          FORCE=1 make download -j2
 
 
       - name: Build
         run: |
           cd openwrt
-          make -j2 V=s
+          FORCE=1 make -j2 V=s
 
 
       - name: Show Firmware
