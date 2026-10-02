@@ -7,10 +7,13 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    env:
+      OPENWRT_DIR: openwrt
+
     steps:
 
       # =========================================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +39,6 @@ jobs:
             git \
             libncurses5-dev \
             libssl-dev \
-            python3-distutils \
             rsync \
             unzip \
             zlib1g-dev \
@@ -46,42 +48,84 @@ jobs:
             xsltproc \
             libxml-parser-perl \
             libelf-dev \
-            ecj \
-            fastjar \
-            java-propose-classpath \
-            python3
+            ca-certificates \
+            python3 \
+            python3-distutils
+
+          echo "=== GCC ==="
+          gcc --version | head -1
+
+          echo "=== Python 3 ==="
+          python3 --version
 
 
       # =========================================================
-      # 3. DOWNLOAD OPENWRT 19.07.9
+      # 3. BUILD PYTHON 2.7.18
+      #    OpenWrt 19.07 membutuhkan command "python"
+      # =========================================================
+      - name: Install Python 2.7
+        run: |
+          cd /tmp
+
+          wget -q \
+            https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+
+          tar -xzf Python-2.7.18.tgz
+
+          cd Python-2.7.18
+
+          ./configure \
+            --prefix=/opt/python2 \
+            --enable-unicode=ucs4 \
+            --without-ensurepip
+
+          make -j$(nproc)
+
+          sudo make install
+
+          sudo ln -sf /opt/python2/bin/python2.7 /usr/local/bin/python
+          sudo ln -sf /opt/python2/bin/python2.7 /usr/local/bin/python2
+
+          echo "/opt/python2/bin" >> "$GITHUB_PATH"
+
+          echo "=== Python ==="
+          /opt/python2/bin/python2.7 --version
+          python --version
+          python2 --version
+
+
+      # =========================================================
+      # 4. CLONE OPENWRT 19.07.9
       # =========================================================
       - name: Clone OpenWrt 19.07.9
         run: |
+          rm -rf "$OPENWRT_DIR"
+
           git clone \
+            --depth=1 \
             --branch v19.07.9 \
-            --depth 1 \
             https://github.com/openwrt/openwrt.git \
-            openwrt
+            "$OPENWRT_DIR"
 
-          echo "OpenWrt berhasil di-download"
+          echo "=== OpenWrt ==="
+          pwd
+          ls -lah "$OPENWRT_DIR"
 
-          test -f openwrt/Makefile
-
-          echo "Makefile ditemukan:"
-          ls -lh openwrt/Makefile
+          test -f "$OPENWRT_DIR/Makefile"
 
 
       # =========================================================
-      # 4. CREATE MR3420 V3 DTS
+      # 5. PATCH TL-MR3420 V3 DTS
       # =========================================================
       - name: Create TL-MR3420 v3 DTS
         run: |
-          cat > openwrt/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts <<'EOF'
+          cat > "$OPENWRT_DIR/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts" <<'EOF'
           /dts-v1/;
 
-          #include "qca953x.dtsi"
+          #include "qca9533.dtsi"
 
           #include <dt-bindings/gpio/gpio.h>
+          #include <dt-bindings/input/input.h>
 
           / {
               compatible = "tplink,tl-mr3420-v3", "qca,qca9531";
@@ -98,17 +142,17 @@ jobs:
                   compatible = "gpio-leds";
 
                   led_system: system {
-                      label = "tp-link:green:system";
+                      label = "green:system";
                       gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
                   };
 
                   usb {
-                      label = "tp-link:green:usb";
+                      label = "green:usb";
                       gpios = <&gpio 4 GPIO_ACTIVE_LOW>;
                   };
 
                   wps {
-                      label = "tp-link:green:wps";
+                      label = "green:wps";
                       gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
                   };
               };
@@ -151,12 +195,12 @@ jobs:
                           read-only;
                       };
 
-                      partition@20000 {
+                      firmware: partition@20000 {
                           label = "firmware";
                           reg = <0x020000 0x7d0000>;
                       };
 
-                      partition@7f0000 {
+                      art: partition@7f0000 {
                           label = "art";
                           reg = <0x7f0000 0x010000>;
                           read-only;
@@ -167,27 +211,14 @@ jobs:
 
           &eth0 {
               status = "okay";
-
-              phy-mode = "gmii";
-
-              mtd-mac-address = <&art 0x0>;
-
-              gmac-config {
-                  device_type = "network";
-              };
           };
 
           &eth1 {
               status = "okay";
-
-              phy-mode = "gmii";
-
-              mtd-mac-address = <&art 0x0>;
           };
 
           &wmac {
               status = "okay";
-
               mtd-cal-data = <&art 0x1000>;
           };
 
@@ -200,107 +231,68 @@ jobs:
           };
           EOF
 
-          echo "=== DTS dibuat ==="
-          ls -lh openwrt/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
+          echo "=== DTS ==="
+          sed -n '1,240p' \
+            "$OPENWRT_DIR/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
 
 
       # =========================================================
-      # 5. ADD DEVICE TO TINY TP-LINK
+      # 6. ADD DEVICE DEFINITION
       # =========================================================
-      - name: Add TL-MR3420 v3 device definition
+      - name: Add TL-MR3420 v3 8MB device
         run: |
-          cat >> openwrt/target/linux/ath79/image/tiny-tp-link.mk <<'EOF'
+          FILE="$OPENWRT_DIR/target/linux/ath79/image/tiny-tp-link.mk"
+
+          # Hapus definisi MR3420 v3 jika sebelumnya pernah ditambahkan
+          sed -i '/^define Device\/tplink_tl-mr3420-v3$/,/^TARGET_DEVICES += tplink_tl-mr3420-v3$/d' "$FILE"
+
+          cat >> "$FILE" <<'EOF'
 
           define Device/tplink_tl-mr3420-v3
-            ATH_SOC := qca9531
-            DEVICE_TITLE := TP-Link TL-MR3420 v3
+            $(Device/tplink-4mlzma)
+            SOC := qca9531
+            DEVICE_MODEL := TL-MR3420
+            DEVICE_VARIANT := v3
+            TPLINK_HWID := 0x34200003
             DEVICE_DTS := qca9531_tplink_tl-mr3420-v3
             TPLINK_FLASHLAYOUT := 8Mlzma
             IMAGE_SIZE := 7936k
-            SUPPORTED_DEVICES := tl-mr3420-v3
+            DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
+            SUPPORTED_DEVICES += tl-mr3420-v3
           endef
+
           TARGET_DEVICES += tplink_tl-mr3420-v3
 
           EOF
 
-          echo "=== Device definition ==="
+          echo "=== MR3420 DEVICE DEFINITION ==="
 
-          grep -n -A10 -B2 \
+          grep -n \
+            -A14 \
+            -B2 \
             "tplink_tl-mr3420-v3" \
-            openwrt/target/linux/ath79/image/tiny-tp-link.mk
+            "$FILE"
 
 
       # =========================================================
-      # 6. UPDATE FEEDS
-      # =========================================================
-      - name: Update feeds
-        working-directory: openwrt
-        run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-
-      # =========================================================
-      # 7. CONFIGURE
-      # =========================================================
-      - name: Configure OpenWrt
-        working-directory: openwrt
-        run: |
-
-          cat > .config <<'EOF'
-          CONFIG_TARGET_ath79=y
-          CONFIG_TARGET_ath79_generic=y
-          CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
-
-          CONFIG_TARGET_ROOTFS_SQUASHFS=y
-
-          CONFIG_PACKAGE_kmod-ath9k=y
-          CONFIG_PACKAGE_ath9k-firmware=y
-          CONFIG_PACKAGE_wpad-basic=y
-
-          CONFIG_PACKAGE_dropbear=y
-          CONFIG_PACKAGE_dnsmasq=y
-          CONFIG_PACKAGE_firewall=y
-          CONFIG_PACKAGE_uhttpd=y
-          CONFIG_PACKAGE_uhttpd-mod-ubus=y
-
-          CONFIG_PACKAGE_luci=y
-          CONFIG_PACKAGE_luci-base=y
-          CONFIG_PACKAGE_luci-mod-admin-full=y
-          CONFIG_PACKAGE_luci-theme-bootstrap=y
-          EOF
-
-          make defconfig
-
-          echo ""
-          echo "======================================"
-          echo "TARGET CONFIGURATION"
-          echo "======================================"
-
-          grep "^CONFIG_TARGET" .config
-
-          echo ""
-          echo "======================================"
-          echo "MR3420 CONFIG"
-          echo "======================================"
-
-          grep "mr3420" .config || true
-
-
-      # =========================================================
-      # 8. VERIFY SOURCE
+      # 7. CHECK TARGET FILES
       # =========================================================
       - name: Verify MR3420 files
-        working-directory: openwrt
+        working-directory: ${{ env.OPENWRT_DIR }}
         run: |
+          echo "======================================"
+          echo "DIRECTORY"
+          echo "======================================"
 
+          pwd
+
+          echo ""
           echo "======================================"
           echo "MAKEFILE"
           echo "======================================"
 
           test -f Makefile
           ls -lh Makefile
-
 
           echo ""
           echo "======================================"
@@ -314,54 +306,130 @@ jobs:
             'tplink,tl-mr3420-v3' \
             target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
 
-
           echo ""
           echo "======================================"
-          echo "DEVICE DEFINITION"
+          echo "DEVICE"
           echo "======================================"
 
-          grep -n \
-            "tplink_tl_mr3420_v3" \
+          grep \
+            -n \
+            "tplink_tl-mr3420-v3" \
             target/linux/ath79/image/tiny-tp-link.mk
 
 
       # =========================================================
-      # 9. DOWNLOAD SOURCES
+      # 8. FEEDS
       # =========================================================
-      - name: Download sources
-        working-directory: openwrt
+      - name: Update feeds
+        working-directory: ${{ env.OPENWRT_DIR }}
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+
+      # =========================================================
+      # 9. CREATE CONFIG
+      # =========================================================
+      - name: Create configuration
+        working-directory: ${{ env.OPENWRT_DIR }}
+        run: |
+          cat > .config <<'EOF'
+          CONFIG_TARGET_ath79=y
+          CONFIG_TARGET_ath79_generic=y
+          CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
+
+          CONFIG_TARGET_ROOTFS_SQUASHFS=y
+
+          CONFIG_PACKAGE_kmod-ath9k=y
+          CONFIG_PACKAGE_ath9k-firmware=y
+          CONFIG_PACKAGE_wpad-basic=y
+
+          CONFIG_PACKAGE_kmod-usb2=y
+          CONFIG_PACKAGE_kmod-usb-ledtrig-usbport=y
+
+          CONFIG_PACKAGE_dnsmasq=y
+          CONFIG_PACKAGE_dropbear=y
+          CONFIG_PACKAGE_firewall=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_uhttpd-mod-ubus=y
+
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-theme-bootstrap=y
+          EOF
+
+
+      # =========================================================
+      # 10. RUN DEFCONFIG
+      # =========================================================
+      - name: Run defconfig
+        working-directory: ${{ env.OPENWRT_DIR }}
+        run: |
+          python --version
+
+          make defconfig
+
+          echo ""
+          echo "======================================"
+          echo "TARGET CONFIG"
+          echo "======================================"
+
+          grep "^CONFIG_TARGET" .config
+
+          echo ""
+          echo "======================================"
+          echo "MR3420 CONFIG"
+          echo "======================================"
+
+          grep \
+            "tplink_tl-mr3420-v3" \
+            .config || true
+
+
+      # =========================================================
+      # 11. PREREQUISITE CHECK
+      # =========================================================
+      - name: Check OpenWrt prerequisites
+        working-directory: ${{ env.OPENWRT_DIR }}
+        run: |
+          python --version
+          make prereq
+
+
+      # =========================================================
+      # 12. DOWNLOAD
+      # =========================================================
+      - name: Download package sources
+        working-directory: ${{ env.OPENWRT_DIR }}
         run: |
           make download -j$(nproc)
 
 
       # =========================================================
-      # 10. BUILD
+      # 13. BUILD
       # =========================================================
       - name: Build OpenWrt
-        working-directory: openwrt
+        working-directory: ${{ env.OPENWRT_DIR }}
         run: |
           echo "======================================"
-          echo "BUILD START"
+          echo "BUILD OPENWRT"
           echo "======================================"
 
           make -j$(nproc) V=s
 
 
       # =========================================================
-      # 11. SHOW RESULT
+      # 14. SHOW RESULT
       # =========================================================
       - name: Show build result
-        working-directory: openwrt
+        working-directory: ${{ env.OPENWRT_DIR }}
         run: |
-
           echo "======================================"
-          echo "BUILD RESULT"
+          echo "ALL TARGET FILES"
           echo "======================================"
 
-          find bin/targets \
-            -type f \
-            -printf "%p  %k KB\n"
-
+          find bin/targets -type f -exec ls -lh {} \;
 
           echo ""
           echo "======================================"
@@ -380,12 +448,12 @@ jobs:
 
 
       # =========================================================
-      # 12. COPY ONLY FIRMWARE
+      # 15. COPY FIRMWARE ONLY
       # =========================================================
-      - name: Prepare firmware
-        working-directory: openwrt
+      - name: Prepare firmware artifact
+        working-directory: ${{ env.OPENWRT_DIR }}
         run: |
-
+          rm -rf ../firmware
           mkdir -p ../firmware
 
           find bin/targets \
@@ -398,28 +466,37 @@ jobs:
             \) \
             -exec cp {} ../firmware/ \;
 
+          echo ""
           echo "======================================"
-          echo "FILES FOR ARTIFACT"
+          echo "ARTIFACT CONTENT"
           echo "======================================"
 
           ls -lah ../firmware
 
 
       # =========================================================
-      # 13. SHA256
+      # 16. SHA256
       # =========================================================
       - name: Generate SHA256
         run: |
-
           cd firmware
 
-          sha256sum * > sha256sums.txt
+          sha256sum \
+            *.bin \
+            *.img \
+            *.img.gz \
+            *.itb \
+            2>/dev/null > sha256sums.txt || true
+
+          echo "======================================"
+          echo "SHA256"
+          echo "======================================"
 
           cat sha256sums.txt
 
 
       # =========================================================
-      # 14. UPLOAD ONLY FIRMWARE
+      # 17. UPLOAD FIRMWARE ONLY
       # =========================================================
       - name: Upload firmware
         uses: actions/upload-artifact@v4
