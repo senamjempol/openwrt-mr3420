@@ -1,5 +1,4 @@
-```yaml
-name: Build OpenWrt 21.02 TL-MR3420 v3 8MB
+name: Build OpenWrt 21.02 - TL-MR3420 v3 8MB
 
 on:
   workflow_dispatch:
@@ -9,8 +8,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
+      - name: Checkout OpenWrt
+        run: |
+          git clone --depth 1 --branch openwrt-21.02 https://github.com/openwrt/openwrt.git openwrt
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -18,6 +20,7 @@ jobs:
             clang \
             flex \
             bison \
+            g++ \
             gawk \
             gcc-multilib \
             g++-multilib \
@@ -25,448 +28,124 @@ jobs:
             git \
             libncurses5-dev \
             libssl-dev \
-            python3 \
             python3-distutils \
             rsync \
             unzip \
             zlib1g-dev \
             file \
             wget \
-            xsltproc
-
-      - name: Clone OpenWrt 21.02
-        run: |
-          git clone \
-            --depth 1 \
-            --branch openwrt-21.02 \
-            https://github.com/openwrt/openwrt.git
-
-          cd openwrt
-
-          echo "OpenWrt source:"
-          git log -1 --oneline
-
-      # ============================================================
-      # MR3420 v3 -> FLASH 8 MB
-      # ============================================================
-
-      - name: Patch MR3420 DTS for 8MB
-        run: |
-          cd openwrt
-
-          DTS="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
-
-          test -f "$DTS"
-
-          sed -i \
-            's/reg = <0x020000 0x3d0000>/reg = <0x020000 0x7d0000>/' \
-            "$DTS"
-
-          sed -i \
-            's/partition@3f0000/partition@7f0000/' \
-            "$DTS"
-
-          sed -i \
-            's/reg = <0x3f0000 0x010000>/reg = <0x7f0000 0x010000>/' \
-            "$DTS"
-
-          echo "===== DTS ====="
-          grep -A8 -B2 'partition@20000' "$DTS"
-          echo
-          grep -A5 -B2 'partition@7f0000' "$DTS"
-
-      # ============================================================
-      # PINDAHKAN DEVICE MR3420 DARI TINY KE GENERIC
-      # ============================================================
-
-      - name: Add MR3420 v3 to generic target
-        run: |
-          cd openwrt
-
-          TINY="target/linux/ath79/image/tiny-tp-link.mk"
-          GENERIC="target/linux/ath79/image/generic-tp-link.mk"
-
-          sed -i \
-            '/define Device\/tplink_tl-mr3420-v3/,/endef/d' \
-            "$TINY"
-
-          sed -i \
-            '/TARGET_DEVICES += tplink_tl-mr3420-v3/d' \
-            "$TINY"
-
-          cat >> "$GENERIC" <<'EOF'
-
-define Device/tplink_tl-mr3420-v3
-  $(Device/tplink-8mlzma)
-  SOC := qca9531
-  DEVICE_MODEL := TL-MR3420
-  DEVICE_VARIANT := v3
-  TPLINK_HWID := 0x34200003
-  DEVICE_PACKAGES := \
-    wpad-basic \
-    kmod-usb2 \
-    kmod-usb-net \
-    kmod-usb-net-cdc-ether \
-    kmod-usb-net-cdc-ncm \
-    kmod-usb-net-huawei-cdc-ncm \
-    kmod-usb-wdm \
-    usb-modeswitch \
-    dnsmasq-full \
-    opennds \
-    luci-base \
-    luci-mod-admin-full \
-    luci-theme-openwrt-2020 \
-    uhttpd \
-    uhttpd-mod-ubus
-endef
-
-TARGET_DEVICES += tplink_tl-mr3420-v3
-EOF
-
-          echo "===== DEVICE ====="
-          grep -A25 \
-            'define Device/tplink_tl-mr3420-v3' \
-            "$GENERIC"
-
-      # ============================================================
-      # FEEDS
-      # ============================================================
+            xsltproc \
+            swig \
+            time
 
       - name: Update feeds
+        working-directory: openwrt
         run: |
-          cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # ============================================================
-      # DEFAULT NETWORK
-      # ============================================================
-
-      - name: Configure network
+      - name: Patch MR3420 v3 for 8MB flash
+        working-directory: openwrt
         run: |
-          cd openwrt
+          python3 - <<'PY'
+          from pathlib import Path
 
-          mkdir -p files/etc/config
+          dts = Path("target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts")
+          s = dts.read_text()
 
-          cat > files/etc/config/network <<'EOF'
-config interface 'loopback'
-  option device 'lo'
-  option proto 'static'
-  option ipaddr '127.0.0.1'
-  option netmask '255.0.0.0'
+          s = s.replace(
+              'reg = <0x020000 0x3d0000>;',
+              'reg = <0x020000 0x7d0000>;'
+          )
 
-config device
-  option name 'br-lan'
-  option type 'bridge'
-  list ports 'eth0'
+          s = s.replace(
+              'reg = <0x3f0000 0x010000>;',
+              'reg = <0x7f0000 0x010000>;'
+          )
 
-config interface 'lan'
-  option device 'br-lan'
-  option proto 'static'
-  option ipaddr '192.168.1.1'
-  option netmask '255.255.255.0'
+          dts.write_text(s)
+          PY
 
-config interface 'wan'
-  option device 'usb0'
-  option proto 'dhcp'
-EOF
-
-      # ============================================================
-      # WIFI OTOMATIS AKTIF
-      # ============================================================
-
-      - name: Configure WiFi
+      - name: Create 8MB device definition
+        working-directory: openwrt
         run: |
-          cd openwrt
+          cat >> target/linux/ath79/image/generic-tp-link.mk <<'EOF'
 
-          cat > files/etc/config/wireless <<'EOF'
-config wifi-device 'radio0'
-  option type 'mac80211'
-  option path 'platform/ahb/18100000.wmac'
-  option band '2g'
-  option htmode 'HT20'
-  option channel 'auto'
-  option country 'ID'
-  option disabled '0'
-
-config wifi-iface 'default_radio0'
-  option device 'radio0'
-  option mode 'ap'
-  option network 'lan'
-  option ssid 'MR3420-WiFi'
-  option encryption 'none'
-EOF
-
-      # ============================================================
-      # DHCP IPv4 ONLY
-      # ============================================================
-
-      - name: Configure DHCP
-        run: |
-          cd openwrt
-
-          cat > files/etc/config/dhcp <<'EOF'
-config dnsmasq
-  option domainneeded '1'
-  option boguspriv '1'
-  option localise_queries '1'
-  option rebind_protection '1'
-  option rebind_localhost '1'
-  option local '/lan/'
-  option domain 'lan'
-  option expandhosts '1'
-  option authoritative '1'
-  option leasefile '/tmp/dhcp.leases'
-  option resolvfile '/tmp/resolv.conf.d/resolv.conf.auto'
-
-config dhcp 'lan'
-  option interface 'lan'
-  option start '100'
-  option limit '100'
-  option leasetime '12h'
-  option dhcpv6 'disabled'
-  option ra 'disabled'
-EOF
-
-      # ============================================================
-      # FIREWALL IPv4
-      # ============================================================
-
-      - name: Configure firewall
-        run: |
-          cd openwrt
-
-          cat > files/etc/config/firewall <<'EOF'
-config defaults
-  option syn_flood '1'
-  option input 'ACCEPT'
-  option output 'ACCEPT'
-  option forward 'REJECT'
-
-config zone
-  option name 'lan'
-  list network 'lan'
-  option input 'ACCEPT'
-  option output 'ACCEPT'
-  option forward 'ACCEPT'
-
-config zone
-  option name 'wan'
-  list network 'wan'
-  option input 'REJECT'
-  option output 'ACCEPT'
-  option forward 'REJECT'
-  option masq '1'
-  option mtu_fix '1'
-
-config forwarding
-  option src 'lan'
-  option dest 'wan'
-
-config rule
-  option name 'Allow-DHCP'
-  option src 'lan'
-  option proto 'udp'
-  option dest_port '67-68'
-  option target 'ACCEPT'
-
-config rule
-  option name 'Allow-DNS'
-  option src 'lan'
-  option proto 'tcp udp'
-  option dest_port '53'
-  option target 'ACCEPT'
-EOF
-
-      # ============================================================
-      # OPENNDS
-      # ============================================================
-
-      - name: Configure openNDS
-        run: |
-          cd openwrt
-
-          cat > files/etc/config/opennds <<'EOF'
-config opennds
-  option enabled '1'
-  option gatewayinterface 'br-lan'
-EOF
-
-      # ============================================================
-      # MATIKAN IPv6 SAAT RUNTIME
-      # ============================================================
-
-      - name: Disable IPv6 runtime
-        run: |
-          cd openwrt
-
-          mkdir -p files/etc/sysctl.d
-
-          cat > files/etc/sysctl.d/99-disable-ipv6.conf <<'EOF'
-net.ipv6.conf.all.disable_ipv6=1
-net.ipv6.conf.default.disable_ipv6=1
-net.ipv6.conf.lo.disable_ipv6=1
-EOF
-
-      # ============================================================
-      # BUILD CONFIG
-      # ============================================================
+          define Device/tplink_tl-mr3420-v3-8m
+            $(Device/tplink-8mlzma)
+            SOC := qca9531
+            DEVICE_DTS := qca9531_tplink_tl-mr3420-v3
+            DEVICE_MODEL := TL-MR3420
+            DEVICE_VARIANT := v3 8MB
+            TPLINK_HWID := 0x34200003
+          endef
+          TARGET_DEVICES += tplink_tl-mr3420-v3-8m
+          EOF
 
       - name: Configure build
+        working-directory: openwrt
         run: |
-          cd openwrt
-
           cat > .config <<'EOF'
-CONFIG_TARGET_ath79=y
-CONFIG_TARGET_ath79_generic=y
-CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
+          CONFIG_TARGET_ath79=y
+          CONFIG_TARGET_ath79_generic=y
+          CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3-8m=y
 
-CONFIG_TARGET_ROOTFS_SQUASHFS=y
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-theme-openwrt-2020=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_uhttpd-mod-ubus=y
 
-CONFIG_PACKAGE_wpad-basic=y
+          CONFIG_PACKAGE_opennds=y
+          CONFIG_PACKAGE_dnsmasq-full=y
 
-CONFIG_PACKAGE_kmod-usb2=y
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
-CONFIG_PACKAGE_kmod-usb-wdm=y
-CONFIG_PACKAGE_usb-modeswitch=y
+          CONFIG_PACKAGE_kmod-usb2=y
+          CONFIG_PACKAGE_kmod-usb-net=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+          CONFIG_PACKAGE_kmod-usb-net-huawei-cdc-ncm=y
+          CONFIG_PACKAGE_kmod-usb-wdm=y
+          CONFIG_PACKAGE_usb-modeswitch=y
 
-CONFIG_PACKAGE_dnsmasq-full=y
-
-CONFIG_PACKAGE_opennds=y
-
-CONFIG_PACKAGE_luci-base=y
-CONFIG_PACKAGE_luci-mod-admin-full=y
-CONFIG_PACKAGE_luci-theme-openwrt-2020=y
-CONFIG_PACKAGE_uhttpd=y
-CONFIG_PACKAGE_uhttpd-mod-ubus=y
-
-# IPv6 packages tidak dipilih
-# CONFIG_PACKAGE_odhcp6c is not set
-# CONFIG_PACKAGE_odhcpd-ipv6only is not set
-# CONFIG_PACKAGE_luci-proto-ipv6 is not set
-EOF
+          CONFIG_PACKAGE_odhcp6c=n
+          CONFIG_PACKAGE_odhcpd-ipv6only=n
+          CONFIG_PACKAGE_luci-proto-ipv6=n
+          EOF
 
           make defconfig
 
-          echo
-          echo "===== TARGET ====="
-          grep '^CONFIG_TARGET_ath79' .config
-
-          echo
-          echo "===== DEVICE ====="
-          grep \
-            '^CONFIG_TARGET_ath79_generic_DEVICE' \
-            .config
-
-          echo
-          echo "===== PACKAGES ====="
-          grep -E \
-            '^CONFIG_PACKAGE_(wpad|kmod-usb|usb-modeswitch|dnsmasq|opennds|luci|uhttpd)' \
-            .config || true
-
-      # ============================================================
-      # VERIFY
-      # ============================================================
-
       - name: Verify configuration
+        working-directory: openwrt
         run: |
-          cd openwrt
+          echo "=== DEVICE ==="
+          grep -E "CONFIG_TARGET_ath79_generic_DEVICE" .config
 
-          echo "===== DTS FIRMWARE ====="
+          echo "=== FLASH LAYOUT ==="
+          grep -R -A5 -B2 "tplink_tl-mr3420-v3-8m" target/linux/ath79/image/
 
-          grep -A8 \
-            'partition@20000' \
-            target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
+          echo "=== DTS PARTITIONS ==="
+          grep -A8 -B2 "partition@20000" target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
 
-          echo
-          echo "===== DTS ART ====="
-
-          grep -A5 \
-            'partition@7f0000' \
-            target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
-
-          echo
-          echo "===== 8MLZMA ====="
-
-          grep -R -n \
-            'TPLINK_FLASHLAYOUT := 8Mlzma' \
-            target/linux/ath79/image
-
-          echo
-          echo "===== OPENNDS ====="
-
-          grep '^CONFIG_PACKAGE_opennds=y' .config
-
-          echo
-          echo "===== LUCI ====="
-
-          grep -E \
-            '^CONFIG_PACKAGE_luci-(base|mod-admin-full|theme-openwrt-2020)=y' \
-            .config
-
-      # ============================================================
-      # DOWNLOAD
-      # ============================================================
+          echo "=== PACKAGES ==="
+          grep -E "opennds|luci-base|luci-mod-admin|kmod-usb-net|huawei" .config
 
       - name: Download sources
+        working-directory: openwrt
         run: |
-          cd openwrt
-          make download -j4 V=s
-
-      # ============================================================
-      # BUILD
-      # ============================================================
+          make download -j2
 
       - name: Build firmware
+        working-directory: openwrt
         run: |
-          cd openwrt
           make -j2 V=s
 
-      # ============================================================
-      # OUTPUT
-      # ============================================================
-
-      - name: Show firmware
+      - name: List firmware
+        working-directory: openwrt
         run: |
-          cd openwrt
-
-          echo "===== FIRMWARE ====="
-
-          ls -lah \
-            bin/targets/ath79/generic/
-
-          echo
-          echo "===== BIN SIZE ====="
-
-          stat -c '%n %s bytes' \
-            bin/targets/ath79/generic/*.bin
-
-          echo
-          echo "===== MANIFEST ====="
-
-          cat \
-            bin/targets/ath79/generic/*.manifest
-
-          echo
-          echo "===== SHA256 ====="
-
-          cat \
-            bin/targets/ath79/generic/sha256sums
-
-      # ============================================================
-      # ARTIFACT
-      # ============================================================
+          find bin/targets/ath79/generic -type f -maxdepth 2 -print
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: MR3420-v3-8MB-WiFi-Huawei-openNDS
-          path: |
-            openwrt/bin/targets/ath79/generic/*.bin
-            openwrt/bin/targets/ath79/generic/*.manifest
-            openwrt/bin/targets/ath79/generic/sha256sums
-          retention-days: 14
-```
+          name: openwrt-mr3420-v3-8mb
+          path: openwrt/bin/targets/ath79/generic/*
