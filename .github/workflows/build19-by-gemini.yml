@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
 
@@ -28,7 +28,6 @@ jobs:
             git \
             libncurses5-dev \
             libssl-dev \
-            python2 \
             python3 \
             python3-setuptools \
             rsync \
@@ -38,7 +37,14 @@ jobs:
             file \
             wget \
             curl
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
+
+      - name: Install Python 2.7
+        run: |
+          sudo add-apt-repository -y ppa:deadsnakes/ppa
+          sudo apt-get update
+          sudo apt-get install -y python2.7 python2.7-dev
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python2
+          sudo ln -sf /usr/bin/python2.7 /usr/bin/python
 
       - name: Clone OpenWrt 19.07.9
         run: |
