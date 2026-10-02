@@ -184,6 +184,9 @@ jobs:
           CONFIG_PACKAGE_luci-proto-ppp=y
           CONFIG_PACKAGE_luci-proto-qmi=y
           CONFIG_PACKAGE_usb-modeswitch=y
+          CONFIG_PACKAGE_usb-modeswitch-data=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ncm=y
+          CONFIG_PACKAGE_luci-proto-ncm=y
 
           # Keep IPv4 firewall/NAT for normal routing and future openNDS use.
           # openNDS itself is intentionally NOT installed.
