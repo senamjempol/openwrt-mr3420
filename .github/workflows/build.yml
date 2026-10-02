@@ -144,11 +144,62 @@ jobs:
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
 
-          CONFIG_PACKAGE_luci=y
+          # Small 8MB image: IPv4 only, no IPv6 stack/packages
+          # CONFIG_IPV6 is not set
+
+          # Minimal LuCI
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-mod-network=y
+          CONFIG_PACKAGE_luci-mod-status=y
+          CONFIG_PACKAGE_luci-mod-system=y
+          CONFIG_PACKAGE_luci-theme-darkmatter=y
+          CONFIG_PACKAGE_luci-lib-base=y
+          CONFIG_PACKAGE_luci-lib-ip=y
+          CONFIG_PACKAGE_luci-lib-jsonc=y
+          CONFIG_PACKAGE_luci-lib-nixio=y
+          CONFIG_PACKAGE_libiwinfo-lua=y
+          CONFIG_PACKAGE_rpcd=y
+          CONFIG_PACKAGE_rpcd-mod-file=y
+          CONFIG_PACKAGE_rpcd-mod-iwinfo=y
+          CONFIG_PACKAGE_rpcd-mod-luci=y
+          CONFIG_PACKAGE_rpcd-mod-rrdns=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_uhttpd-mod-ubus=y
+
+          # USB modem: 3G/serial + QMI + USB Ethernet/RNDIS
+          CONFIG_PACKAGE_kmod-usb2=y
+          CONFIG_PACKAGE_kmod-usb-serial=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_kmod-usb-serial-wwan=y
+          CONFIG_PACKAGE_kmod-usb-net=y
+          CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+          CONFIG_PACKAGE_kmod-usb-net-rndis=y
+          CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y
+          CONFIG_PACKAGE_kmod-usb-wdm=y
+          CONFIG_PACKAGE_wwan=y
+          CONFIG_PACKAGE_uqmi=y
+          CONFIG_PACKAGE_comgt=y
+          CONFIG_PACKAGE_luci-proto-3g=y
+          CONFIG_PACKAGE_luci-proto-ppp=y
+          CONFIG_PACKAGE_luci-proto-qmi=y
+          CONFIG_PACKAGE_usb-modeswitch=y
+
+          # Keep IPv4 firewall/NAT for normal routing and future openNDS use.
+          # openNDS itself is intentionally NOT installed.
+          CONFIG_PACKAGE_firewall=y
+          CONFIG_PACKAGE_iptables=y
+
+          # Indonesian LuCI translation
           CONFIG_LUCI_LANG_id=y
           EOF
 
           make defconfig
+
+          echo "======================================"
+          echo "FINAL PACKAGE SELECTION"
+          echo "======================================"
+          ./scripts/diffconfig.sh | grep -E '^(CONFIG_PACKAGE_|# CONFIG_IPV6)' || true
 
 
       - name: Verify Target
