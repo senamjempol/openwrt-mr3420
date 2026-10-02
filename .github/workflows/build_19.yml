@@ -13,16 +13,16 @@ jobs:
     steps:
 
       # =========================================================
-      # 1. CHECKOUT REPOSITORY
+      # 1. CHECKOUT
       # =========================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
       # =========================================================
-      # 2. INSTALL BUILD DEPENDENCIES
+      # 2. DEPENDENCIES
       # =========================================================
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
 
@@ -52,18 +52,9 @@ jobs:
             python3 \
             python3-distutils
 
-          echo "======================================"
-          echo "BUILD DEPENDENCIES"
-          echo "======================================"
-
-          gcc --version | head -1
-          make --version | head -1
-          python3 --version
-
 
       # =========================================================
-      # 3. INSTALL PYTHON 2.7
-      # OpenWrt 19.07 membutuhkan Python 2
+      # 3. PYTHON 2
       # =========================================================
       - name: Install Python 2.7
         run: |
@@ -95,44 +86,31 @@ jobs:
 
           echo "/opt/python2/bin" >> "$GITHUB_PATH"
 
-          echo "======================================"
-          echo "PYTHON VERSION"
-          echo "======================================"
-
-          /opt/python2/bin/python2.7 --version
           python --version
-          python2 --version
 
 
       # =========================================================
-      # 4. CLONE OPENWRT 19.07.9
+      # 4. CLONE OPENWRT
       # =========================================================
       - name: Clone OpenWrt 19.07.9
         run: |
-          rm -rf "$OPENWRT_DIR"
+          rm -rf openwrt
 
           git clone \
             --depth=1 \
             --branch v19.07.9 \
             https://github.com/openwrt/openwrt.git \
-            "$OPENWRT_DIR"
+            openwrt
 
-          echo "======================================"
-          echo "OPENWRT SOURCE"
-          echo "======================================"
-
-          pwd
-          ls -lah "$OPENWRT_DIR"
-
-          test -f "$OPENWRT_DIR/Makefile"
+          test -f openwrt/Makefile
 
 
       # =========================================================
-      # 5. CREATE MR3420 V3 DTS
+      # 5. CREATE DTS
       # =========================================================
       - name: Create TL-MR3420 v3 DTS
         run: |
-          cat > "$OPENWRT_DIR/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts" <<'EOF'
+          cat > openwrt/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts <<'EOF'
           /dts-v1/;
 
           #include "qca9533.dtsi"
@@ -244,22 +222,13 @@ jobs:
           };
           EOF
 
-          echo "======================================"
-          echo "DTS CREATED"
-          echo "======================================"
-
-          ls -lh \
-            "$OPENWRT_DIR/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
-
 
       # =========================================================
-      # 6. ADD MR3420 V3 IMAGE DEFINITION
+      # 6. ADD DEVICE
       # =========================================================
-      - name: Add TL-MR3420 v3 image definition
+      - name: Add TL-MR3420 v3 device
         run: |
-          FILE="$OPENWRT_DIR/target/linux/ath79/image/tiny-tp-link.mk"
-
-          cat >> "$FILE" <<'EOF'
+          cat >> openwrt/target/linux/ath79/image/tiny-tp-link.mk <<'EOF'
 
           define Device/tplink_tl-mr3420-v3
             $(Device/tplink-4mlzma)
@@ -278,31 +247,22 @@ jobs:
 
           EOF
 
-          echo "======================================"
-          echo "IMAGE DEFINITION"
-          echo "======================================"
-
-          grep -n \
-            -A15 \
-            "tplink_tl-mr3420-v3" \
-            "$FILE"
-
 
       # =========================================================
-      # 7. UPDATE FEEDS
+      # 7. FEEDS
       # =========================================================
       - name: Update feeds
-        working-directory: ${{ env.OPENWRT_DIR }}
+        working-directory: openwrt
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
 
       # =========================================================
-      # 8. CREATE CONFIGURATION
+      # 8. CONFIG
       # =========================================================
-      - name: Create OpenWrt configuration
-        working-directory: ${{ env.OPENWRT_DIR }}
+      - name: Configure OpenWrt
+        working-directory: openwrt
         run: |
           cat > .config <<'EOF'
           CONFIG_TARGET_ath79=y
@@ -330,92 +290,64 @@ jobs:
           CONFIG_PACKAGE_luci-theme-bootstrap=y
           EOF
 
-          echo "======================================"
-          echo "CONFIG CREATED"
-          echo "======================================"
-
-          cat .config
-
-
-      # =========================================================
-      # 9. DEFCONFIG
-      # =========================================================
-      - name: Run defconfig
-        working-directory: ${{ env.OPENWRT_DIR }}
-        run: |
-          echo "Python:"
-          python --version
-
           make defconfig
 
-          echo "======================================"
-          echo "TARGET CONFIGURATION"
-          echo "======================================"
-
-          grep "^CONFIG_TARGET" .config
-
-          echo "======================================"
-          echo "MR3420 CONFIGURATION"
-          echo "======================================"
-
-          grep "mr3420" .config || true
-
 
       # =========================================================
-      # 10. CHECK PREREQUISITES
+      # 9. PREREQUISITE
       # =========================================================
-      - name: Check OpenWrt prerequisites
-        working-directory: ${{ env.OPENWRT_DIR }}
+      - name: Check prerequisites
+        working-directory: openwrt
         run: |
-          echo "======================================"
-          echo "OPENWRT PREREQUISITES"
-          echo "======================================"
-
           python --version
-
           make prereq
 
 
       # =========================================================
-      # 11. DOWNLOAD SOURCES
+      # 10. DOWNLOAD
       # =========================================================
       - name: Download sources
-        working-directory: ${{ env.OPENWRT_DIR }}
+        working-directory: openwrt
         run: |
           make download -j$(nproc)
 
 
       # =========================================================
-      # 12. BUILD
+      # 11. BUILD
       # =========================================================
       - name: Build OpenWrt
-        working-directory: ${{ env.OPENWRT_DIR }}
+        working-directory: openwrt
         run: |
-          echo "======================================"
-          echo "BUILD START"
-          echo "======================================"
-
           make -j$(nproc) V=s
 
 
       # =========================================================
-      # 13. DISPLAY BUILD RESULTS
+      # 12. INSPECT BIN/TARGETS
       # =========================================================
-      - name: Display build results
-        working-directory: ${{ env.OPENWRT_DIR }}
+      - name: Inspect build output
+        working-directory: openwrt
         run: |
           echo "======================================"
-          echo "ALL BUILD OUTPUT"
+          echo "BIN/TARGETS SIZE"
+          echo "======================================"
+
+          du -sh bin/targets
+
+          echo ""
+          echo "======================================"
+          echo "ALL FILES - SIZE SORTED"
           echo "======================================"
 
           find bin/targets \
             -type f \
-            -exec ls -lh {} \;
-
+            -printf "%s %p\n" \
+            | sort -nr \
+            | head -100 \
+            | numfmt --field=1 --to=iec
 
           echo ""
           echo "======================================"
-          echo "FIRMWARE ONLY"
+          echo "IMAGE-LIKE FILES"
           echo "======================================"
 
           find bin/targets \
@@ -430,131 +362,140 @@ jobs:
 
 
       # =========================================================
-      # 14. CREATE CLEAN ARTIFACT DIRECTORY
+      # 13. FIND ACTUAL FIRMWARE
       # =========================================================
-      - name: Create clean firmware directory
+      - name: Find MR3420 firmware
+        working-directory: openwrt
+        run: |
+          echo "======================================"
+          echo "MR3420 FILES"
+          echo "======================================"
+
+          find bin/targets \
+            -type f \
+            | grep -i \
+              -E 'mr3420|3420' \
+            | while read FILE; do
+                ls -lh "$FILE"
+              done
+
+
+      # =========================================================
+      # 14. CREATE CLEAN FIRMWARE DIRECTORY
+      # =========================================================
+      - name: Prepare firmware
         run: |
           rm -rf firmware
           mkdir -p firmware
 
-          find "$OPENWRT_DIR/bin/targets" \
+          echo "======================================"
+          echo "SEARCHING FOR MR3420 FIRMWARE"
+          echo "======================================"
+
+          find openwrt/bin/targets \
             -type f \
             \( \
-              -name "*.bin" \
-              -o -name "*.img" \
-              -o -name "*.img.gz" \
-              -o -name "*.itb" \
+              -name "*mr3420*.bin" \
+              -o -name "*mr3420*.img" \
+              -o -name "*mr3420*.img.gz" \
+              -o -name "*mr3420*.itb" \
             \) \
-            -exec cp {} firmware/ \;
+            -print
 
 
       # =========================================================
-      # 15. REMOVE UNNECESSARY FILES
+      # 15. COPY ONLY MR3420 FILES
       # =========================================================
-      - name: Clean artifact directory
+      - name: Copy MR3420 firmware
         run: |
-          find firmware \
-            -type f \
-            ! \( \
-              -name "*.bin" \
-              -o -name "*.img" \
-              -o -name "*.img.gz" \
-              -o -name "*.itb" \
-            \) \
-            -delete
+          set -e
 
-          echo "======================================"
-          echo "CLEAN FIRMWARE DIRECTORY"
-          echo "======================================"
+          FOUND=0
 
-          find firmware -maxdepth 1 -type f -exec ls -lh {} \;
+          while IFS= read -r FILE; do
 
+            SIZE=$(stat -c%s "$FILE")
 
-      # =========================================================
-      # 16. CHECK ARTIFACT SIZE
-      # =========================================================
-      - name: Check artifact size
-        run: |
-          SIZE_KB=$(du -sk firmware | cut -f1)
-
-          echo "======================================"
-          echo "ARTIFACT SIZE"
-          echo "======================================"
-
-          du -sh firmware
-
-          echo ""
-          echo "Size: ${SIZE_KB} KB"
-
-          # Firmware router 8MB tidak boleh mendekati 1GB.
-          if [ "$SIZE_KB" -gt 50000 ]; then
             echo ""
-            echo "ERROR: Artifact terlalu besar!"
-            echo "Kemungkinan source/build directory ikut masuk."
+            echo "FILE:"
+            echo "$FILE"
+
+            echo "SIZE:"
+            numfmt --to=iec "$SIZE"
+
+            # 8 MB flash:
+            # image firmware harus jauh di bawah 8 MB.
+            if [ "$SIZE" -gt 8000000 ]; then
+              echo "WARNING: file terlalu besar, dilewati."
+              continue
+            fi
+
+            cp "$FILE" firmware/
+
+            FOUND=1
+
+          done < <(
+            find openwrt/bin/targets \
+              -type f \
+              \( \
+                -name "*mr3420*.bin" \
+                -o -name "*mr3420*.img" \
+                -o -name "*mr3420*.img.gz" \
+                -o -name "*mr3420*.itb" \
+              \)
+          )
+
+          if [ "$FOUND" -eq 0 ]; then
+            echo ""
+            echo "ERROR: Firmware MR3420 v3 tidak ditemukan."
             exit 1
           fi
 
 
       # =========================================================
-      # 17. CHECK THAT OPENWRT IS NOT INSIDE FIRMWARE
-      # =========================================================
-      - name: Verify artifact isolation
-        run: |
-          echo "======================================"
-          echo "ARTIFACT ISOLATION CHECK"
-          echo "======================================"
-
-          if find firmware \
-            -type f \
-            | grep -E '/(openwrt|build_dir|staging_dir|dl|tmp)/'; then
-
-            echo "ERROR: build directory terdeteksi di firmware!"
-            exit 1
-          fi
-
-          echo "OK - hanya firmware yang akan di-upload."
-
-
-      # =========================================================
-      # 18. GENERATE SHA256
-      # =========================================================
-      - name: Generate SHA256
-        run: |
-          cd firmware
-
-          sha256sum \
-            *.bin \
-            *.img \
-            *.img.gz \
-            *.itb \
-            2>/dev/null > sha256sums.txt || true
-
-          echo "======================================"
-          echo "SHA256"
-          echo "======================================"
-
-          cat sha256sums.txt
-
-
-      # =========================================================
-      # 19. FINAL FILE LIST
+      # 16. FINAL ARTIFACT CHECK
       # =========================================================
       - name: Final artifact check
         run: |
           echo "======================================"
-          echo "FINAL ARTIFACT"
+          echo "FINAL FIRMWARE"
           echo "======================================"
-
-          du -sh firmware
 
           find firmware \
             -maxdepth 1 \
             -type f \
             -exec ls -lh {} \;
 
+          echo ""
+          echo "======================================"
+          echo "TOTAL SIZE"
+          echo "======================================"
+
+          du -sh firmware
+
+          echo ""
+          echo "======================================"
+          echo "TOTAL BYTES"
+          echo "======================================"
+
+          du -sb firmware
+
 
       # =========================================================
-      # 20. UPLOAD FIRMWARE ONLY
+      # 17. GENERATE CHECKSUM
+      # =========================================================
+      - name: Generate SHA256
+        run: |
+          cd firmware
+
+          sha256sum * > sha256sums.txt
+
+          echo "======================================"
+          cat sha256sums.txt
+
+
+      # =========================================================
+      # 18. UPLOAD ONLY FIRMWARE
       # =========================================================
       - name: Upload firmware ONLY
         uses: actions/upload-artifact@v4
