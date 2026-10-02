@@ -60,13 +60,17 @@ jobs:
 
           DTS_PATH="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
           GENERIC="target/linux/ath79/image/generic-tp-link.mk"
+          COMMON_TP="target/linux/ath79/image/common-tp-link.mk"
           DTS_MAKEFILE="target/linux/ath79/dts/Makefile"
 
           echo "======================================"
-          echo "DOWNLOAD DTS FROM 21.02 REPO"
+          echo "DOWNLOAD DTS & COMMON-TP-LINK FROM 21.02"
           echo "======================================"
           curl -o "$DTS_PATH" \
             https://raw.githubusercontent.com/openwrt/openwrt/openwrt-21.02/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
+
+          curl -o "$COMMON_TP" \
+            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-21.02/target/linux/ath79/image/common-tp-link.mk
 
           echo "======================================"
           echo "REGISTER DTB IN DTS MAKEFILE"
