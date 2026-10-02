@@ -1,4 +1,4 @@
-name: Test OpenWrt Build
+name: Build OpenWrt 19.07.9 MR3420 v3
 
 on:
   workflow_dispatch:
@@ -8,15 +8,297 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: Test
-        run: echo "YAML OK"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            flex \
+            bison \
+            gawk \
+            gettext \
+            git \
+            libncurses5-dev \
+            libncursesw5-dev \
+            libssl-dev \
+            python3 \
+            python3-distutils \
+            rsync \
+            unzip \
+            zlib1g-dev \
+            file \
+            wget \
+            curl \
+            xsltproc \
+            swig \
+            time
 
       - name: Clone OpenWrt
         run: |
-          git clone --depth 1 --branch v19.07.9 https://github.com/openwrt/openwrt.git openwrt
+          git clone \
+            --depth 1 \
+            --branch v19.07.9 \
+            https://github.com/openwrt/openwrt.git \
+            openwrt
 
-      - name: Check source
+      - name: Install Python 2
         run: |
-          cd openwrt
-          echo "OpenWrt source OK"
-          git describe --tags
+          cd /tmp
+          wget -q https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz
+          tar xf Python-2.7.18.tgz
+          cd Python-2.7.18
+          ./configure --prefix=/usr/local
+          make -j2
+          sudo make altinstall
+          sudo ln -sf /usr/local/bin/python2.7 /usr/local/bin/python
+          python --version
+
+      - name: Show ath79 structure
+        working-directory: openwrt
+        run: |
+          echo "=== DTS FILES ==="
+          find target/linux/ath79/dts -maxdepth 1 -type f | head -50
+
+          echo
+          echo "=== IMAGE FILES ==="
+          find target/linux/ath79/image -maxdepth 1 -type f -print
+
+      - name: Create MR3420 DTS
+        working-directory: openwrt
+        run: |
+          cat > target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts <<'EOF'
+/dts-v1/;
+
+#include "qca953x.dtsi"
+
+/ {
+    compatible = "tplink,tl-mr3420-v3";
+    model = "TP-Link TL-MR3420 v3";
+
+    aliases {
+        led-boot = &led_system;
+        led-failsafe = &led_system;
+        led-running = &led_system;
+        led-upgrade = &led_system;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+
+        led_system: system {
+            label = "green:system";
+            gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+        };
+
+        wlan {
+            label = "green:wlan";
+            gpios = <&gpio 9 GPIO_ACTIVE_LOW>;
+            linux,default-trigger = "phy0tpt";
+        };
+
+        usb {
+            label = "green:usb";
+            gpios = <&gpio 8 GPIO_ACTIVE_LOW>;
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+
+        reset {
+            label = "reset";
+            linux,code = <KEY_RESTART>;
+            gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+        };
+
+        wps {
+            label = "WPS";
+            linux,code = <KEY_WPS_BUTTON>;
+            gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
+        };
+    };
+};
+
+&spi {
+    status = "okay";
+
+    flash@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <25000000>;
+
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            partition@0 {
+                label = "u-boot";
+                reg = <0x000000 0x020000>;
+                read-only;
+            };
+
+            partition@20000 {
+                label = "firmware";
+                reg = <0x020000 0x7d0000>;
+            };
+
+            partition@7f0000 {
+                label = "art";
+                reg = <0x7f0000 0x010000>;
+                read-only;
+            };
+        };
+    };
+};
+
+&uart {
+    status = "okay";
+};
+
+&usb {
+    status = "okay";
+};
+
+&wmac {
+    status = "okay";
+};
+EOF
+
+      - name: Create MR3420 image definition
+        working-directory: openwrt
+        run: |
+          cat >> target/linux/ath79/image/tiny-tp-link.mk <<'EOF'
+
+define Device/tplink_tl-mr3420-v3
+  $(Device/tplink-8mlzma)
+  SOC := qca9531
+  DEVICE_VENDOR := TP-Link
+  DEVICE_MODEL := TL-MR3420
+  DEVICE_VARIANT := v3
+  TPLINK_HWID := 0x34200003
+  DEVICE_PACKAGES := kmod-usb2
+endef
+
+TARGET_DEVICES += tplink_tl-mr3420-v3
+
+EOF
+
+      - name: Verify files
+        working-directory: openwrt
+        run: |
+          echo "=== MR3420 DTS ==="
+          test -f target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
+          echo "DTS OK"
+
+          echo
+          echo "=== MR3420 DEVICE ==="
+          grep -A10 "define Device/tplink_tl-mr3420-v3" \
+            target/linux/ath79/image/tiny-tp-link.mk
+
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Create configuration
+        working-directory: openwrt
+        run: |
+          cat > .config <<'EOF'
+CONFIG_TARGET_ath79=y
+CONFIG_TARGET_ath79_tiny=y
+CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y
+
+CONFIG_TARGET_ROOTFS_SQUASHFS=y
+
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl=y
+
+CONFIG_PACKAGE_kmod-ath9k=y
+CONFIG_PACKAGE_wpad-mini=y
+
+CONFIG_PACKAGE_kmod-usb2=y
+EOF
+
+      - name: Generate configuration
+        working-directory: openwrt
+        run: |
+          make defconfig
+
+          echo "=== TARGET ==="
+          grep "CONFIG_TARGET_ath79" .config
+
+          echo
+          echo "=== DEVICE ==="
+          grep "CONFIG_TARGET_DEVICE" .config
+
+      - name: Verify selected device
+        working-directory: openwrt
+        run: |
+          grep -q \
+            "^CONFIG_TARGET_DEVICE_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y" \
+            .config
+
+          echo "MR3420 V3 SELECTED"
+
+      - name: Download packages
+        working-directory: openwrt
+        run: |
+          make download -j4 V=s
+
+      - name: Build
+        working-directory: openwrt
+        run: |
+          make -j$(nproc) V=s
+
+      - name: Find MR3420 firmware
+        working-directory: openwrt
+        run: |
+          echo "=== MR3420 FILES ==="
+
+          find bin/targets \
+            -type f \
+            | grep -i mr3420
+
+      - name: Collect firmware
+        working-directory: openwrt
+        run: |
+          mkdir -p firmware
+
+          find bin/targets \
+            -type f \
+            \( \
+              -iname "*mr3420*.bin" \
+              -o -iname "*mr3420*.img" \
+              -o -iname "*mr3420*.img.gz" \
+              -o -iname "*mr3420*.itb" \
+            \) \
+            -exec cp {} firmware/ \;
+
+          echo "=== FIRMWARE ==="
+          ls -lah firmware
+
+          test "$(find firmware -type f | wc -l)" -gt 0
+
+      - name: Check firmware size
+        working-directory: openwrt
+        run: |
+          du -sh firmware
+
+      - name: Generate checksum
+        working-directory: openwrt
+        run: |
+          cd firmware
+          sha256sum * > sha256sums.txt
+          cat sha256sums.txt
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-MR3420-v3-8MB
+          path: openwrt/firmware/*
+          if-no-files-found: error
+          retention-days: 7
