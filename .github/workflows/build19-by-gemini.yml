@@ -6,6 +6,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      FORCE: 1
 
     steps:
 
@@ -136,7 +138,7 @@ jobs:
           CONFIG_LUCI_LANG_id=y
           EOF
 
-          FORCE=1 make defconfig
+          make defconfig
 
 
       - name: Verify Target
@@ -169,13 +171,13 @@ jobs:
       - name: Download
         run: |
           cd openwrt
-          FORCE=1 make download -j2
+          make download -j2
 
 
       - name: Build
         run: |
           cd openwrt
-          FORCE=1 make -j2 V=s
+          make -j2 V=s
 
 
       - name: Show Firmware
