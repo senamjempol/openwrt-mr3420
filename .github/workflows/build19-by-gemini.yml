@@ -54,50 +54,57 @@ jobs:
             https://github.com/openwrt/openwrt.git \
             openwrt
 
-      - name: Add & Patch MR3420 v3 8MB for 19.07.9
+      - name: Inspect Image Directory & Patch MR3420 v3 8MB
         run: |
           cd openwrt
 
-          DTS_PATH="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
+          echo "======================================"
+          echo "CEK ISI DIREKTORI IMAGE"
+          echo "======================================"
+          ls -la target/linux/ath79/image/
+
+          DTS="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
           GENERIC="target/linux/ath79/image/generic-tp-link.mk"
           COMMON_TP="target/linux/ath79/image/common-tp-link.mk"
           DTS_MAKEFILE="target/linux/ath79/dts/Makefile"
 
           echo "======================================"
-          echo "DOWNLOAD DTS & COMMON-TP-LINK FROM 21.02"
+          echo "DOWNLOAD DTS JIKA BELUM ADA"
           echo "======================================"
-          curl -o "$DTS_PATH" \
-            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-21.02/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
-
-          curl -o "$COMMON_TP" \
-            https://raw.githubusercontent.com/openwrt/openwrt/openwrt-21.02/target/linux/ath79/image/common-tp-link.mk
+          if [ ! -f "$DTS" ]; then
+            curl -o "$DTS" \
+              https://raw.githubusercontent.com/openwrt/openwrt/openwrt-21.02/target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts
+          fi
 
           echo "======================================"
           echo "REGISTER DTB IN DTS MAKEFILE"
           echo "======================================"
-          echo "dtb-\$(CONFIG_TARGET_ath79_generic) += qca9531_tplink_tl-mr3420-v3.dtb" >> "$DTS_MAKEFILE"
+          if ! grep -q "qca9531_tplink_tl-mr3420-v3.dtb" "$DTS_MAKEFILE"; then
+            echo "dtb-\$(CONFIG_TARGET_ath79_generic) += qca9531_tplink_tl-mr3420-v3.dtb" >> "$DTS_MAKEFILE"
+          fi
 
           echo "======================================"
-          echo "PATCH DTS FOR 8MB FLASH"
+          echo "PATCH DTS 8MB"
           echo "======================================"
+
           sed -i \
             's/reg = <0x020000 0x3d0000>/reg = <0x020000 0x7d0000>/' \
-            "$DTS_PATH"
+            "$DTS"
 
           sed -i \
             's/partition@3f0000/partition@7f0000/' \
-            "$DTS_PATH"
+            "$DTS"
 
           sed -i \
             's/reg = <0x3f0000 0x010000>/reg = <0x7f0000 0x010000>/' \
-            "$DTS_PATH"
+            "$DTS"
 
           echo "DTS after patch:"
-          grep -n -A22 "partitions" "$DTS_PATH"
+          grep -n -A22 "partitions" "$DTS"
 
 
           echo "======================================"
-          echo "ADD MR3420 TO GENERIC"
+          echo "TAMBAH MR3420 KE GENERIC-TP-LINK.MK"
           echo "======================================"
 
           cat >> "$GENERIC" <<'EOF'
@@ -118,7 +125,7 @@ jobs:
 
 
           echo "======================================"
-          echo "CHECK MR3420 DEFINITION"
+          echo "CHECK MR3420"
           echo "======================================"
 
           grep -n -A12 \
