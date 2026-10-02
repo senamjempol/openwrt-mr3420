@@ -5,9 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    env:
-      FORCE: 1
+    runs-on: ubuntu-20.04
 
     steps:
 
@@ -30,6 +28,7 @@ jobs:
             git \
             libncurses5-dev \
             libssl-dev \
+            python2 \
             python3 \
             python3-setuptools \
             rsync \
@@ -39,6 +38,7 @@ jobs:
             file \
             wget \
             curl
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
 
       - name: Clone OpenWrt 19.07.9
         run: |
