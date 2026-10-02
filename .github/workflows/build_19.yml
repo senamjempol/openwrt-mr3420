@@ -407,84 +407,35 @@ jobs:
       # ============================================================
       # 12. BUILD
       # ============================================================
-      - name: Build firmware
-        working-directory: openwrt
+      - name: Build OpenWrt
         run: |
+          make -j$(nproc)
 
-          export PATH="/usr/local/bin:/opt/python2/bin:$PATH"
-
-          make -j2 V=s
-
-      # ============================================================
-      # 13. INSPECT OUTPUT
-      # ============================================================
-      - name: Inspect firmware output
-        working-directory: openwrt
+      - name: Show firmware files
         run: |
+          echo "=== Firmware hasil build ==="
+          find bin/targets -type f \( \
+          -name "*.bin" -o \
+          -name "*.itb" -o \
+          -name "*.img.gz" \
+          \) -printf "%p %k KB\n"
 
-          echo "=========================================="
-          echo "OUTPUT DIRECTORY SIZE"
-          echo "=========================================="
-
-          du -sh bin/targets/ath79/* || true
-
-          echo
-          echo "=========================================="
-          echo "ALL FILES"
-          echo "=========================================="
-
-          find bin/targets/ath79 \
-            -type f \
-            -printf '%s bytes  %p\n' \
-            | sort -n
-
-          echo
-          echo "=========================================="
-          echo "BIN FILES"
-          echo "=========================================="
-
-          find bin/targets/ath79 \
-            -type f \
-            -name "*.bin" \
-            -exec ls -lh {} \;
-
-      # ============================================================
-      # 14. CREATE SMALL ARTIFACT DIRECTORY
-      # ============================================================
-      - name: Prepare firmware artifact
-        working-directory: openwrt
+      - name: Prepare firmware
         run: |
+          mkdir -p firmware
+          find bin/targets -type f \( \
+          -name "*.bin" -o \
+          -name "*.itb" -o \
+          -name "*.img.gz" \
+          \) -exec cp {} firmware/ \;
 
-          rm -rf /tmp/mr3420-firmware
-          mkdir -p /tmp/mr3420-firmware
+          echo "=== Isi firmware ==="
+          ls -lh firmware
 
-          echo "Searching firmware..."
-
-          find bin/targets/ath79 \
-            -type f \
-            -name "*.bin" \
-            -exec cp {} /tmp/mr3420-firmware/ \;
-
-          echo
-          echo "Firmware files:"
-          ls -lh /tmp/mr3420-firmware
-
-          echo
-          echo "Total firmware size:"
-          du -sh /tmp/mr3420-firmware
-
-          if [ -z "$(find /tmp/mr3420-firmware -type f -name '*.bin')" ]; then
-            echo "ERROR: Tidak ada firmware .bin!"
-            exit 1
-          fi
-
-      # ============================================================
-      # 15. UPLOAD ONLY FIRMWARE
-      # ============================================================
-      - name: Upload firmware only
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-19.07.9-TL-MR3420-v3-8MB
-          path: /tmp/mr3420-firmware/*.bin
+          name: OpenWrt-MR3420-v3
+          path: firmware/*
           if-no-files-found: error
           compression-level: 9
