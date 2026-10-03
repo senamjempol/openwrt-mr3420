@@ -1,0 +1,320 @@
+name: Build OpenWrt 19.07.9 MR3420 v3 8MB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3 python3-setuptools rsync swig unzip zlib1g-dev file wget curl
+
+      - name: Clone exact OpenWrt 19.07.9 source
+        run: |
+          git clone --branch v19.07.9 --single-branch https://github.com/openwrt/openwrt.git openwrt
+          cd openwrt
+          git checkout v19.07.9
+          git describe --tags --always
+
+      - name: Port TL-MR3420 v3 and prepare 8MB image
+        run: |
+          cd openwrt
+
+          DTS="target/linux/ath79/dts/qca9531_tplink_tl-mr3420-v3.dts"
+          TINY="target/linux/ath79/image/tiny-tp-link.mk"
+          COMMON="target/linux/ath79/image/common-tp-link.mk"
+
+          mkdir -p "$(dirname "$DTS")"
+          cat > "$DTS" <<'DTS_EOF'
+ /dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include "qca953x.dtsi"
+
+/ {
+  compatible = "tplink,tl-mr3420-v3", "qca,qca9531";
+  model = "TP-Link TL-MR3420 v3";
+
+  aliases {
+    led-boot = &led_system;
+    led-failsafe = &led_system;
+    led-running = &led_system;
+    led-upgrade = &led_system;
+  };
+
+  led_spi {
+    compatible = "spi-gpio";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    sck-gpios = <&gpio 15 GPIO_ACTIVE_HIGH>;
+    mosi-gpios = <&gpio 16 GPIO_ACTIVE_HIGH>;
+    cs-gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+    num-chipselects = <1>;
+
+    led_gpio: led_gpio@0 {
+      compatible = "fairchild,74hc595";
+      reg = <0>;
+      gpio-controller;
+      #gpio-cells = <2>;
+      registers-number = <1>;
+      spi-max-frequency = <10000000>;
+    };
+  };
+
+  leds {
+    compatible = "gpio-leds";
+    led_system: system {
+      label = "green:system";
+      gpios = <&gpio 1 GPIO_ACTIVE_LOW>;
+      default-state = "on";
+    };
+    lan4 { label = "green:lan4"; gpios = <&led_gpio 0 GPIO_ACTIVE_LOW>; };
+    lan3 { label = "green:lan3"; gpios = <&led_gpio 1 GPIO_ACTIVE_LOW>; };
+    lan2 { label = "green:lan2"; gpios = <&led_gpio 2 GPIO_ACTIVE_LOW>; };
+    lan1 { label = "green:lan1"; gpios = <&led_gpio 3 GPIO_ACTIVE_LOW>; };
+    wan { label = "green:wan"; gpios = <&led_gpio 4 GPIO_ACTIVE_LOW>; };
+    wan_fail { label = "orange:wan"; gpios = <&led_gpio 5 GPIO_ACTIVE_LOW>; };
+    usb { label = "green:usb"; gpios = <&led_gpio 7 GPIO_ACTIVE_LOW>; };
+    qss { label = "green:qss"; gpios = <&gpio 3 GPIO_ACTIVE_LOW>; };
+  };
+
+  keys {
+    compatible = "gpio-keys-polled";
+    poll-interval = <20>;
+    reset {
+      label = "Reset button";
+      linux,code = <KEY_RESTART>;
+      gpios = <&gpio 12 GPIO_ACTIVE_LOW>;
+    };
+    rfkill {
+      label = "RF kill button";
+      linux,code = <KEY_RFKILL>;
+      gpios = <&gpio 17 GPIO_ACTIVE_LOW>;
+    };
+  };
+};
+
+&spi {
+  status = "okay";
+  flash@0 {
+    compatible = "jedec,spi-nor";
+    reg = <0>;
+    spi-max-frequency = <25000000>;
+    partitions {
+      compatible = "fixed-partitions";
+      #address-cells = <1>;
+      #size-cells = <1>;
+
+      uboot: partition@0 {
+        label = "u-boot";
+        reg = <0x000000 0x020000>;
+        read-only;
+      };
+
+      firmware: partition@20000 {
+        compatible = "tplink,firmware";
+        label = "firmware";
+        reg = <0x020000 0x7d0000>;
+      };
+
+      art: partition@7f0000 {
+        label = "art";
+        reg = <0x7f0000 0x010000>;
+        read-only;
+      };
+    };
+  };
+};
+
+&eth0 {
+  status = "okay";
+  phy-handle = <&swphy4>;
+  mtd-mac-address = <&uboot 0x1fc00>;
+};
+
+&eth1 {
+  status = "okay";
+  mtd-mac-address = <&uboot 0x1fc00>;
+  mtd-mac-address-increment = <1>;
+};
+
+&wmac {
+  status = "okay";
+  mtd-mac-address = <&uboot 0x1fc00>;
+  mtd-mac-address-increment = <2>;
+  mtd-cal-data = <&art 0x1000>;
+};
+
+&usb0 { status = "okay"; };
+&usb_phy { status = "okay"; };
+
+DTS_EOF
+
+          # Add an 8MiB TP-Link LZMA layout if this old source tree does not have it.
+          if ! grep -q '^define Device/tplink-8mlzma' "$COMMON"; then
+            cat >> "$COMMON" <<'EOF'
+
+define Device/tplink-8mlzma
+  $(Device/tplink)
+  TPLINK_FLASHLAYOUT := 8Mlzma
+  IMAGE_SIZE := 7936k
+endef
+EOF
+          fi
+
+          # Add the MR3420 v3 device definition because 19.07.9 does not ship it.
+          if ! grep -q 'TARGET_DEVICES += tplink_tl-mr3420-v3' "$TINY"; then
+            cat >> "$TINY" <<'EOF'
+
+define Device/tplink_tl-mr3420-v3
+  $(Device/tplink-8mlzma)
+  SOC := qca9531
+  DEVICE_MODEL := TL-MR3420
+  DEVICE_VARIANT := v3
+  TPLINK_HWID := 0x34200003
+  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
+  SUPPORTED_DEVICES += tl-mr3420-v3
+endef
+TARGET_DEVICES += tplink_tl-mr3420-v3
+EOF
+          fi
+
+          grep -n -A10 'define Device/tplink_tl-mr3420-v3' "$TINY"
+          grep -n -A5 'define Device/tplink-8mlzma' "$COMMON"
+          test -f "$DTS"
+
+      - name: Update official feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure
+        run: |
+          cd openwrt
+          rm -f .config
+
+          cat > .config <<'EOF'
+          CONFIG_TARGET_ath79=y
+          CONFIG_TARGET_ath79_generic=y
+          CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
+
+          # Keep the 8MB image lean.
+          # CONFIG_IPV6 is not set
+
+          # LuCI + lightweight Material theme
+          CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-mod-admin-full=y
+          CONFIG_PACKAGE_luci-mod-network=y
+          CONFIG_PACKAGE_luci-mod-status=y
+          CONFIG_PACKAGE_luci-mod-system=y
+          CONFIG_PACKAGE_luci-theme-material=y
+          CONFIG_PACKAGE_luci-lib-base=y
+          CONFIG_PACKAGE_luci-lib-ip=y
+          CONFIG_PACKAGE_luci-lib-jsonc=y
+          CONFIG_PACKAGE_luci-lib-nixio=y
+          CONFIG_PACKAGE_libiwinfo-lua=y
+          CONFIG_PACKAGE_rpcd=y
+          CONFIG_PACKAGE_rpcd-mod-file=y
+          CONFIG_PACKAGE_rpcd-mod-iwinfo=y
+          CONFIG_PACKAGE_rpcd-mod-luci=y
+          CONFIG_PACKAGE_rpcd-mod-rrdns=y
+          CONFIG_PACKAGE_uhttpd=y
+          CONFIG_PACKAGE_uhttpd-mod-ubus=y
+
+          # Software menu
+          CONFIG_PACKAGE_opkg=y
+          CONFIG_PACKAGE_luci-app-opkg=y
+
+          # Network > Firewall
+          CONFIG_PACKAGE_firewall=y
+          CONFIG_PACKAGE_iptables=y
+          CONFIG_PACKAGE_luci-app-firewall=y
+
+          # Huawei M150-2: USB 3G/serial only
+          CONFIG_PACKAGE_kmod-usb2=y
+          CONFIG_PACKAGE_kmod-usb-serial=y
+          CONFIG_PACKAGE_kmod-usb-serial-option=y
+          CONFIG_PACKAGE_kmod-usb-serial-wwan=y
+          CONFIG_PACKAGE_comgt=y
+          CONFIG_PACKAGE_usb-modeswitch=y
+          CONFIG_PACKAGE_usb-modeswitch-data=y
+          CONFIG_PACKAGE_luci-proto-3g=y
+          CONFIG_PACKAGE_luci-proto-ppp=y
+
+          # Indonesian LuCI
+          CONFIG_LUCI_LANG_id=y
+          EOF
+
+          make defconfig
+
+          grep '^CONFIG_TARGET_ath79' .config
+          grep '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y' .config
+          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|kmod-usb-serial-option|comgt|usb-modeswitch)|# CONFIG_IPV6)' .config
+
+      - name: Add first-boot WiFi and 19.07.9 package feeds
+        run: |
+          cd openwrt
+
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-enable-wifi <<'EOF'
+          #!/bin/sh
+          [ -s /etc/config/wireless ] || /sbin/wifi config
+          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
+            uci -q set "wireless.$radio.disabled=0"
+          done
+          uci -q commit wireless
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/99-enable-wifi
+
+          mkdir -p files/etc/opkg
+          cat > files/etc/opkg/distfeeds.conf <<'EOF'
+          src/gz openwrt_core https://downloads.openwrt.org/releases/19.07.9/targets/ath79/generic/packages
+          src/gz openwrt_base https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/base
+          src/gz openwrt_luci https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/luci
+          src/gz openwrt_packages https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/packages
+          src/gz openwrt_routing https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/routing
+          src/gz openwrt_telephony https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/telephony
+          EOF
+
+          # Ensure the firmware contains the intended repository configuration.
+          grep -n '^src/gz' files/etc/opkg/distfeeds.conf
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j2
+
+      - name: Build
+        run: |
+          cd openwrt
+          make -j2 V=s
+
+      - name: Verify firmware
+        run: |
+          cd openwrt
+          ls -lh bin/targets/ath79/generic/
+          ls -lh bin/targets/ath79/generic/*mr3420-v3*.bin || true
+          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -name '*mr3420-v3*.bin' -print -quit)"
+          for f in bin/targets/ath79/generic/*mr3420-v3*.bin; do
+            bytes=$(stat -c '%s' "$f")
+            echo "$f: $bytes bytes"
+            test "$bytes" -le 8126464
+          done
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-19.07.9-mr3420-v3-8mb
+          path: |
+            openwrt/bin/targets/ath79/generic/*mr3420-v3*.bin
+            openwrt/bin/targets/ath79/generic/sha256sums
