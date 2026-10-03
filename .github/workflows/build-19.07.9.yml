@@ -314,9 +314,9 @@ jobs:
         run: |
           cd openwrt
           ls -lh bin/targets/ath79/tiny/
-          ls -lh bin/targets/ath79/generic/*mr3420-v3*.bin || true
+          ls -lh bin/targets/ath79/tiny/*mr3420-v3*.bin || true
           test -n "$(find bin/targets/ath79/generic -maxdepth 1 -name '*mr3420-v3*.bin' -print -quit)"
-          for f in bin/targets/ath79/generic/*mr3420-v3*.bin; do
+          for f in bin/targets/ath79/tiny/*mr3420-v3*.bin; do
             bytes=$(stat -c '%s' "$f")
             echo "$f: $bytes bytes"
             test "$bytes" -le 8126464
@@ -327,5 +327,5 @@ jobs:
         with:
           name: openwrt-19.07.9-mr3420-v3-8mb
           path: |
-            openwrt/bin/targets/ath79/generic/*mr3420-v3*.bin
-            openwrt/bin/targets/ath79/generic/sha256sums
+            openwrt/bin/targets/ath79/tiny/*mr3420-v3*.bin
+            openwrt/bin/targets/ath79/tiny/sha256sums
