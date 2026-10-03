@@ -83,19 +83,36 @@ jobs:
           
           leds {
           compatible = "gpio-leds";
+
           led_system: system {
-          label = "green:system";
+          label = "green:power";
           gpios = <&gpio 1 GPIO_ACTIVE_LOW>;
           default-state = "on";
           };
-          lan4 { label = "green:lan4"; gpios = <&led_gpio 0 GPIO_ACTIVE_LOW>; };
-          lan3 { label = "green:lan3"; gpios = <&led_gpio 1 GPIO_ACTIVE_LOW>; };
-          lan2 { label = "green:lan2"; gpios = <&led_gpio 2 GPIO_ACTIVE_LOW>; };
+
+          wlan {
+          label = "green:wlan";
+          gpios = <&led_gpio 6 GPIO_ACTIVE_LOW>;
+          linux,default-trigger = "phy0tpt";
+          };
+
           lan1 { label = "green:lan1"; gpios = <&led_gpio 3 GPIO_ACTIVE_LOW>; };
+          lan2 { label = "green:lan2"; gpios = <&led_gpio 2 GPIO_ACTIVE_LOW>; };
+          lan3 { label = "green:lan3"; gpios = <&led_gpio 1 GPIO_ACTIVE_LOW>; };
+          lan4 { label = "green:lan4"; gpios = <&led_gpio 0 GPIO_ACTIVE_LOW>; };
+
           wan { label = "green:wan"; gpios = <&led_gpio 4 GPIO_ACTIVE_LOW>; };
-          wan_fail { label = "orange:wan"; gpios = <&led_gpio 5 GPIO_ACTIVE_LOW>; };
-          usb { label = "green:usb"; gpios = <&led_gpio 7 GPIO_ACTIVE_LOW>; };
-          qss { label = "green:qss"; gpios = <&gpio 3 GPIO_ACTIVE_LOW>; };
+
+          usb {
+          label = "green:usb";
+          gpios = <&led_gpio 7 GPIO_ACTIVE_LOW>;
+          linux,default-trigger = "usbport";
+          };
+
+          qss {
+          label = "green:qss";
+          gpios = <&gpio 3 GPIO_ACTIVE_LOW>;
+          };
           };
           
           keys {
