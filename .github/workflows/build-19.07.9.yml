@@ -95,6 +95,7 @@ jobs:
           gpio-export,output = <1>;
           gpios = <&gpio 14 GPIO_ACTIVE_LOW>;
           };
+          };
           
           leds {
           compatible = "gpio-leds";
