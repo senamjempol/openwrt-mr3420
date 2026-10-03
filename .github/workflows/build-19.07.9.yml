@@ -162,11 +162,11 @@ DTS_EOF
           if ! grep -q '^define Device/tplink-8mlzma' "$COMMON"; then
             cat >> "$COMMON" <<'EOF'
 
-define Device/tplink-8mlzma
-  $(Device/tplink)
-  TPLINK_FLASHLAYOUT := 8Mlzma
-  IMAGE_SIZE := 7936k
-endef
+          define Device/tplink-8mlzma
+            $(Device/tplink)
+            TPLINK_FLASHLAYOUT := 8Mlzma
+            IMAGE_SIZE := 7936k
+          endef
 EOF
           fi
 
@@ -174,16 +174,16 @@ EOF
           if ! grep -q 'TARGET_DEVICES += tplink_tl-mr3420-v3' "$TINY"; then
             cat >> "$TINY" <<'EOF'
 
-define Device/tplink_tl-mr3420-v3
-  $(Device/tplink-8mlzma)
-  SOC := qca9531
-  DEVICE_MODEL := TL-MR3420
-  DEVICE_VARIANT := v3
-  TPLINK_HWID := 0x34200003
-  DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
-  SUPPORTED_DEVICES += tl-mr3420-v3
-endef
-TARGET_DEVICES += tplink_tl-mr3420-v3
+          define Device/tplink_tl-mr3420-v3
+            $(Device/tplink-8mlzma)
+            SOC := qca9531
+            DEVICE_MODEL := TL-MR3420
+            DEVICE_VARIANT := v3
+            TPLINK_HWID := 0x34200003
+            DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
+            SUPPORTED_DEVICES += tl-mr3420-v3
+          endef
+          TARGET_DEVICES += tplink_tl-mr3420-v3
 EOF
           fi
 
