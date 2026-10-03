@@ -315,7 +315,7 @@ jobs:
           cd openwrt
           ls -lh bin/targets/ath79/tiny/
           ls -lh bin/targets/ath79/tiny/*mr3420-v3*.bin || true
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -name '*mr3420-v3*.bin' -print -quit)"
+          test -n "$(find bin/targets/ath79/tiny -maxdepth 1 -name '*mr3420-v3*.bin' -print -quit)"
           for f in bin/targets/ath79/tiny/*mr3420-v3*.bin; do
             bytes=$(stat -c '%s' "$f")
             echo "$f: $bytes bytes"
