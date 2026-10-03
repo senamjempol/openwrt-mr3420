@@ -156,7 +156,7 @@ jobs:
           &usb0 { status = "okay"; };
           &usb_phy { status = "okay"; };
           
-DTS_EOF
+          DTS_EOF
 
           # Add an 8MiB TP-Link LZMA layout if this old source tree does not have it.
           if ! grep -q '^define Device/tplink-8mlzma' "$COMMON"; then
@@ -167,7 +167,7 @@ DTS_EOF
             TPLINK_FLASHLAYOUT := 8Mlzma
             IMAGE_SIZE := 7936k
           endef
-EOF
+          EOF
           fi
 
           # Add the MR3420 v3 device definition because 19.07.9 does not ship it.
@@ -184,7 +184,7 @@ EOF
             SUPPORTED_DEVICES += tl-mr3420-v3
           endef
           TARGET_DEVICES += tplink_tl-mr3420-v3
-EOF
+          EOF
           fi
 
           grep -n -A10 'define Device/tplink_tl-mr3420-v3' "$TINY"
