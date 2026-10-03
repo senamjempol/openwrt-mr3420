@@ -171,6 +171,7 @@ jobs:
           CONFIG_PACKAGE_luci-mod-system=y
           CONFIG_PACKAGE_luci-theme-material=y
           CONFIG_PACKAGE_luci-app-opkg=y
+          CONFIG_PACKAGE_luci-app-firewall=y
           CONFIG_PACKAGE_opkg=y
           CONFIG_PACKAGE_luci-lib-base=y
           CONFIG_PACKAGE_luci-lib-ip=y
@@ -214,6 +215,7 @@ jobs:
           echo "VERIFY SOFTWARE UI PACKAGE"
           echo "======================================"
           grep '^CONFIG_PACKAGE_luci-app-opkg=y' .config
+          grep '^CONFIG_PACKAGE_luci-app-firewall=y' .config
 
           echo "======================================"
           echo "FINAL PACKAGE SELECTION"
