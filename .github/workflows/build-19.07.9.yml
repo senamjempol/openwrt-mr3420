@@ -284,6 +284,9 @@ jobs:
           CONFIG_PACKAGE_iptables=y
           CONFIG_PACKAGE_luci-app-firewall=y
 
+          # openNDS captive portal (installed, disabled by default)
+          CONFIG_PACKAGE_opennds=y
+
           # Huawei M150-2: USB 3G/serial only
           CONFIG_PACKAGE_kmod-usb2=y
           CONFIG_PACKAGE_kmod-usb-serial=y
@@ -303,7 +306,7 @@ jobs:
 
           grep '^CONFIG_TARGET_ath79' .config
           grep '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' .config
-          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|kmod-usb-serial-option|comgt|usb-modeswitch)|# CONFIG_IPV6)' .config
+          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|opennds|kmod-usb-serial-option|comgt|usb-modeswitch)|# CONFIG_IPV6)' .config
 
       - name: Add first-boot WiFi and 19.07.9 package feeds
         run: |
@@ -320,6 +323,17 @@ jobs:
           exit 0
           EOF
           chmod 755 files/etc/uci-defaults/99-enable-wifi
+
+          # Keep openNDS installed but disabled by default.
+          cat > files/etc/uci-defaults/98-disable-opennds <<'EOF'
+          #!/bin/sh
+          if [ -x /etc/init.d/opennds ]; then
+            /etc/init.d/opennds stop 2>/dev/null || true
+            /etc/init.d/opennds disable 2>/dev/null || true
+          fi
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/98-disable-opennds
 
           mkdir -p files/etc/opkg
           cat > files/etc/opkg/distfeeds.conf <<'EOF'
