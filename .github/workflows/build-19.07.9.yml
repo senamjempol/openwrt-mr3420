@@ -188,9 +188,8 @@ jobs:
 
           define Device/tplink_tl-mr3420-v3
             $(Device/tplink-8mlzma)
-            SOC := qca9531
-            DEVICE_MODEL := TL-MR3420
-            DEVICE_VARIANT := v3
+            ATH_SOC := qca9531
+            DEVICE_TITLE := TP-Link TL-MR3420 v3
             TPLINK_HWID := 0x34200003
             DEVICE_PACKAGES := kmod-usb2 kmod-usb-ledtrig-usbport
             SUPPORTED_DEVICES += tl-mr3420-v3
@@ -216,8 +215,8 @@ jobs:
 
           cat > .config <<'EOF'
           CONFIG_TARGET_ath79=y
-          CONFIG_TARGET_ath79_generic=y
-          CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y
+          CONFIG_TARGET_ath79_tiny=y
+          CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y
 
           # Keep the 8MB image lean.
           # CONFIG_IPV6 is not set
@@ -269,7 +268,7 @@ jobs:
           make defconfig
 
           grep '^CONFIG_TARGET_ath79' .config
-          grep '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-mr3420-v3=y' .config
+          grep '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' .config
           grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|kmod-usb-serial-option|comgt|usb-modeswitch)|# CONFIG_IPV6)' .config
 
       - name: Add first-boot WiFi and 19.07.9 package feeds
@@ -314,7 +313,7 @@ jobs:
       - name: Verify firmware
         run: |
           cd openwrt
-          ls -lh bin/targets/ath79/generic/
+          ls -lh bin/targets/ath79/tiny/
           ls -lh bin/targets/ath79/generic/*mr3420-v3*.bin || true
           test -n "$(find bin/targets/ath79/generic -maxdepth 1 -name '*mr3420-v3*.bin' -print -quit)"
           for f in bin/targets/ath79/generic/*mr3420-v3*.bin; do
