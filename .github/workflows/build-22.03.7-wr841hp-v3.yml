@@ -140,15 +140,96 @@ jobs:
           EOF
           chmod 755 files/etc/uci-defaults/99-default-settings
 
-          cat > files/etc/uci-defaults/98-disable-opennds <<'EOF'
+          cat > files/etc/uci-defaults/98-voucher-hotspot <<'EOF'
+          # Dedicated voucher network for the HOTSPOT AP.
+          uci -q set network.voucher='interface'
+          uci -q set network.voucher.proto='static'
+          uci -q set network.voucher.ipaddr='192.168.101.1'
+          uci -q set network.voucher.netmask='255.255.255.0'
+          uci -q delete network.voucher.gateway
+          uci -q delete network.voucher.dns
+
+          # DHCP for voucher clients.
+          uci -q add dhcp dhcp
+          voucher_dhcp=$?
+          # Replace the automatically generated anonymous section with explicit values.
+          if [ "$voucher_dhcp" = "0" ]; then
+            section=$(uci show dhcp | sed -n "s/^dhcp\.\(@dhcp\[[0-9]*\]\)=dhcp$/\1/p" | tail -n 1)
+            uci -q set "dhcp.$section.interface=voucher"
+            uci -q set "dhcp.$section.start=100"
+            uci -q set "dhcp.$section.limit=100"
+            uci -q set "dhcp.$section.leasetime=12h"
+          fi
+
+          # Add the open, passwordless HOTSPOT AP on the existing radio.
+          radio=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p' | head -n 1)
+          if [ -n "$radio" ]; then
+            wifi_section=$(uci add wireless wifi-iface)
+            uci -q set "wireless.$wifi_section.device=$radio"
+            uci -q set "wireless.$wifi_section.mode=ap"
+            uci -q set "wireless.$wifi_section.ssid=HOTSPOT"
+            uci -q set "wireless.$wifi_section.encryption=none"
+            uci -q set "wireless.$wifi_section.network=voucher"
+            uci -q set "wireless.$wifi_section.disabled=0"
+          fi
+
+          uci -q commit network
+          uci -q commit dhcp
+          uci -q commit wireless
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/98-voucher-hotspot
+
+          cat > files/etc/uci-defaults/97-voucher-firewall <<'EOF'
+          # Voucher clients may reach the Internet, but cannot access router
+          # management services such as LuCI/SSH from the HOTSPOT network.
+          zone=$(uci add firewall zone)
+          uci -q set "firewall.$zone.name=voucher"
+          uci -q set "firewall.$zone.network=voucher"
+          uci -q set "firewall.$zone.input=REJECT"
+          uci -q set "firewall.$zone.output=ACCEPT"
+          uci -q set "firewall.$zone.forward=REJECT"
+          uci -q set "firewall.$zone.masq=1"
+
+          forward=$(uci add firewall forwarding)
+          uci -q set "firewall.$forward.src=voucher"
+          uci -q set "firewall.$forward.dest=wan"
+
+          # Allow DHCP and DNS on the router for voucher clients.
+          rule=$(uci add firewall rule)
+          uci -q set "firewall.$rule.name=Allow-DHCP-Voucher"
+          uci -q set "firewall.$rule.src=voucher"
+          uci -q set "firewall.$rule.proto=udp"
+          uci -q set "firewall.$rule.dest_port=67"
+          uci -q set "firewall.$rule.target=ACCEPT"
+
+          rule=$(uci add firewall rule)
+          uci -q set "firewall.$rule.name=Allow-DNS-Voucher"
+          uci -q set "firewall.$rule.src=voucher"
+          uci -q set "firewall.$rule.proto='tcp udp'"
+          uci -q set "firewall.$rule.dest_port=53"
+          uci -q set "firewall.$rule.target=ACCEPT"
+
+          uci -q commit firewall
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/97-voucher-firewall
+
+          cat > files/etc/uci-defaults/96-disable-opennds <<'EOF'
           # Keep openNDS installed, but disabled by default.
+          # When enabled later, it manages only the dedicated voucher interface.
+          if [ -f /etc/config/opennds ]; then
+            uci -q set opennds.@opennds[0].gatewayinterface='voucher'
+            uci -q commit opennds
+          fi
+
           if [ -x /etc/init.d/opennds ]; then
             /etc/init.d/opennds stop 2>/dev/null || true
             /etc/init.d/opennds disable 2>/dev/null || true
           fi
           exit 0
           EOF
-          chmod 755 files/etc/uci-defaults/98-disable-opennds
+          chmod 755 files/etc/uci-defaults/96-disable-opennds
 
           mkdir -p files/etc/opkg
 
