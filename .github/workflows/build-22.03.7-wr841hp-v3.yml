@@ -73,8 +73,8 @@ jobs:
           CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_luci-app-firewall=y
 
-          # Runtime library required by openNDS.
-          # openNDS itself is intentionally NOT included.
+          # openNDS - included in firmware, disabled by default.
+          CONFIG_PACKAGE_opennds=y
           CONFIG_PACKAGE_libmicrohttpd-no-ssl=y
 
           # Indonesian LuCI.
@@ -90,11 +90,12 @@ jobs:
           grep '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y' .config
 
           echo "=== Important packages ==="
-          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|firewall4|libmicrohttpd-no-ssl)|# CONFIG_IPV6)' .config
+          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|firewall4|opennds|libmicrohttpd-no-ssl)|# CONFIG_IPV6)' .config
 
           test "$(grep -c '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_opennds=y' .config)" -eq 1
 
-      - name: Add first-boot WiFi enable and package feeds
+      - name: Add first-boot WiFi enable, disable openNDS, and package feeds
         run: |
           cd openwrt
 
@@ -112,6 +113,16 @@ jobs:
           exit 0
           EOF
           chmod 755 files/etc/uci-defaults/99-enable-wifi
+
+          cat > files/etc/uci-defaults/98-disable-opennds <<'EOF'
+          # Keep openNDS installed, but disabled by default.
+          if [ -x /etc/init.d/opennds ]; then
+            /etc/init.d/opennds stop 2>/dev/null || true
+            /etc/init.d/opennds disable 2>/dev/null || true
+          fi
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/98-disable-opennds
 
           mkdir -p files/etc/opkg
 
