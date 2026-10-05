@@ -102,6 +102,14 @@ jobs:
           mkdir -p files/etc/uci-defaults
 
           cat > files/etc/uci-defaults/99-default-settings <<'EOF'
+          # Set timezone to Jakarta (WIB, UTC+7).
+          uci -q set system.@system[0].timezone='WIB-7'
+          uci -q set system.@system[0].zonename='Asia/Jakarta'
+          uci -q commit system
+
+          # Set the default root password.
+          printf '%s\n%s\n' 'enter' 'enter' | passwd root >/dev/null 2>&1 || true
+
           # Generate wireless config if it does not exist yet.
           [ -s /etc/config/wireless ] || /sbin/wifi config
 
