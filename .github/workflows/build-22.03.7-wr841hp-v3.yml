@@ -220,15 +220,15 @@ jobs:
           chmod 755 files/etc/uci-defaults/97-voucher-firewall
 
           # Install the three OpenNDS files from the repository root.
-          # - opennds   -> /etc/config/opennds
-          # - voucher.sh -> /etc/opennds/voucher.sh
-          # - vouchers  -> /etc/opennds/vouchers
+          # - opennds    -> /etc/config/opennds
+          # - voucher.sh -> /usr/lib/opennds/voucher.sh
+          # - vouchers   -> /etc/opennds/vouchers
           # The OpenNDS gateway is bound to the voucher network device br-voucher.
-          mkdir -p files/etc/config files/etc/opennds
+          mkdir -p files/etc/config files/etc/opennds files/usr/lib/opennds
           cp ../opennds files/etc/config/opennds
-          cp ../voucher.sh files/etc/opennds/voucher.sh
+          cp ../voucher.sh files/usr/lib/opennds/voucher.sh
           cp ../vouchers files/etc/opennds/vouchers
-          chmod 755 files/etc/opennds/voucher.sh
+          chmod 755 files/usr/lib/opennds/voucher.sh
 
           uci -q set opennds.@opennds[0].gatewayinterface='br-voucher' 2>/dev/null || true
 
