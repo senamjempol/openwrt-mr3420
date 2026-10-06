@@ -1,4 +1,3 @@
-
 config opennds
 	option enabled '1'
 	option fwhook_enabled '1'
@@ -6,11 +5,11 @@ config opennds
 	option unescape_callback_enabled '0'
 	option gatewayinterface 'br-voucher'
 	option gatewayname 'Hotspot Voucher'
-	option maxclients '250'
+	option maxclients '30'
 	option preauthidletimeout '30'
 	option authidletimeout '120'
 	option sessiontimeout '1200'
-	option checkinterval '60'
+	option checkinterval '15'
 	option uploadrate '0'
 	option downloadrate '0'
 	option ratecheckwindow '2'
@@ -26,4 +25,3 @@ config opennds
 	list users_to_router 'allow tcp port 443'
 	option login_option_enabled '0'
 	option preauth '/usr/lib/opennds/voucher.sh'
-
