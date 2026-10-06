@@ -70,16 +70,17 @@ jobs:
 
           # Firewall 4 / nftables.
           # OpenWrt 22.03 uses firewall4 with nftables.
+          # nftables MUST be built into the image because OpenNDS 10.1.3
+          # calls /usr/sbin/nft directly.
           CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_nftables=y
           CONFIG_PACKAGE_luci-app-firewall=y
-          
-          # dnsmasq-full provides nftset/ipset support required by OpenNDS
-          # for walled-garden handling. Replace the minimal dnsmasq build.
+
+          # dnsmasq-full provides nftset support required by OpenNDS.
           CONFIG_PACKAGE_dnsmasq-full=y
           # CONFIG_PACKAGE_dnsmasq is not set
 
-          # openNDS - included in firmware, disabled by default.
+          # openNDS - included in firmware and enabled by first-boot setup.
           CONFIG_PACKAGE_opennds=y
           CONFIG_PACKAGE_libmicrohttpd-no-ssl=y
 
@@ -96,10 +97,12 @@ jobs:
           grep '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y' .config
 
           echo "=== Important packages ==="
-          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|firewall4|opennds|libmicrohttpd-no-ssl)|# CONFIG_IPV6)' .config
+          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|firewall4|nftables|dnsmasq-full|opennds|libmicrohttpd-no-ssl)|# CONFIG_IPV6)' .config
 
           test "$(grep -c '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_opennds=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_nftables=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_dnsmasq-full=y' .config)" -eq 1
 
       - name: Add first-boot defaults and package feeds
         run: |
@@ -172,8 +175,6 @@ jobs:
           # Add the open, passwordless HOTSPOT AP on the existing radio.
           radio=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p' | head -n 1)
           if [ -n "$radio" ]; then
-            # Use a named wifi-iface section so LuCI does not show
-            # the "Wireless configuration migration" warning.
             uci -q set wireless.voucher_ap='wifi-iface'
             uci -q set wireless.voucher_ap.device="$radio"
             uci -q set wireless.voucher_ap.mode='ap'
@@ -226,10 +227,6 @@ jobs:
           chmod 755 files/etc/uci-defaults/97-voucher-firewall
 
           # Install the three OpenNDS files from the repository root.
-          # - opennds    -> /etc/config/opennds
-          # - voucher.sh -> /usr/lib/opennds/voucher.sh
-          # - vouchers   -> /etc/opennds/vouchers
-          # The OpenNDS gateway is bound to the voucher network device br-voucher.
           mkdir -p files/etc/config files/etc/opennds files/usr/lib/opennds
           cp ../opennds files/etc/config/opennds
           cp ../voucher.sh files/usr/lib/opennds/voucher.sh
@@ -238,15 +235,25 @@ jobs:
 
           uci -q set opennds.@opennds[0].gatewayinterface='br-voucher' 2>/dev/null || true
 
-          cat > files/etc/uci-defaults/96-opennds <<'EOF'
+          # IMPORTANT: uci-defaults scripts run in lexical order.
+          # 97/98/99 create the voucher firewall, bridge and default settings.
+          # Therefore OpenNDS must start AFTER them, not as 96-opennds.
+          cat > files/etc/uci-defaults/100-opennds <<'EOF'
           # OpenNDS is installed and enabled by default.
-          # Start it only after the voucher bridge/network configuration
-          # from the earlier uci-defaults scripts has been committed.
+          # This script deliberately runs after 97/98/99 so br-voucher exists.
           if [ -f /etc/config/opennds ]; then
             uci -q set opennds.@opennds[0].enabled='1'
             uci -q set opennds.@opennds[0].gatewayinterface='br-voucher'
             uci -q commit opennds
           fi
+
+          # Wait briefly for the voucher bridge/address to be present.
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            if ip link show br-voucher >/dev/null 2>&1 &&                ip -4 addr show br-voucher | grep -q '192\.168\.101\.1/'; then
+              break
+            fi
+            sleep 1
+          done
 
           if [ -x /etc/init.d/opennds ]; then
             /etc/init.d/opennds enable 2>/dev/null || true
@@ -254,7 +261,7 @@ jobs:
           fi
           exit 0
           EOF
-          chmod 755 files/etc/uci-defaults/96-opennds
+          chmod 755 files/etc/uci-defaults/100-opennds
 
           mkdir -p files/etc/opkg
 
@@ -300,6 +307,18 @@ jobs:
             test "$bytes" -le 8126464
           done
 
+          # Hard verification: nftables and OpenNDS must actually be present
+          # in the generated package manifest. This prevents producing an image
+          # that passes .config checks but still lacks /usr/sbin/nft.
+          manifest=$(find bin/targets/ath79/generic -name '*tplink_tl-wr841hp-v3.manifest' | head -n 1)
+          test -n "$manifest"
+          echo "=== Required packages in firmware manifest ==="
+          grep -E '^(nftables|firewall4|dnsmasq-full|opennds) ' "$manifest"
+          grep -q '^nftables ' "$manifest"
+          grep -q '^firewall4 ' "$manifest"
+          grep -q '^dnsmasq-full ' "$manifest"
+          grep -q '^opennds ' "$manifest"
+
           sha256sum bin/targets/ath79/generic/*tplink_tl-wr841hp-v3*.bin
 
       - name: Upload firmware
@@ -308,5 +327,6 @@ jobs:
           name: openwrt-22.03.7-wr841hp-v3-8mb-minimal
           path: |
             openwrt/bin/targets/ath79/generic/*tplink_tl-wr841hp-v3*.bin
+            openwrt/bin/targets/ath79/generic/*tplink_tl-wr841hp-v3.manifest
             openwrt/bin/targets/ath79/generic/sha256sums
             openwrt/.config
