@@ -69,9 +69,15 @@ jobs:
           CONFIG_PACKAGE_luci-app-opkg=y
 
           # Firewall 4 / nftables.
-          # This is the native firewall stack in OpenWrt 22.03.
+          # OpenWrt 22.03 uses firewall4 with nftables.
           CONFIG_PACKAGE_firewall4=y
+          CONFIG_PACKAGE_nftables=y
           CONFIG_PACKAGE_luci-app-firewall=y
+          
+          # dnsmasq-full provides nftset/ipset support required by OpenNDS
+          # for walled-garden handling. Replace the minimal dnsmasq build.
+          CONFIG_PACKAGE_dnsmasq-full=y
+          # CONFIG_PACKAGE_dnsmasq is not set
 
           # openNDS - included in firmware, disabled by default.
           CONFIG_PACKAGE_opennds=y
@@ -232,22 +238,23 @@ jobs:
 
           uci -q set opennds.@opennds[0].gatewayinterface='br-voucher' 2>/dev/null || true
 
-          cat > files/etc/uci-defaults/96-disable-opennds <<'EOF'
-          # Keep openNDS installed and fully configured, but disabled by default.
-          # The actual OpenNDS configuration and voucher files are copied from
-          # the repository root during the build.
+          cat > files/etc/uci-defaults/96-opennds <<'EOF'
+          # OpenNDS is installed and enabled by default.
+          # Start it only after the voucher bridge/network configuration
+          # from the earlier uci-defaults scripts has been committed.
           if [ -f /etc/config/opennds ]; then
+            uci -q set opennds.@opennds[0].enabled='1'
             uci -q set opennds.@opennds[0].gatewayinterface='br-voucher'
             uci -q commit opennds
           fi
 
           if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds stop 2>/dev/null || true
-            /etc/init.d/opennds disable 2>/dev/null || true
+            /etc/init.d/opennds enable 2>/dev/null || true
+            /etc/init.d/opennds start 2>/dev/null || true
           fi
           exit 0
           EOF
-          chmod 755 files/etc/uci-defaults/96-disable-opennds
+          chmod 755 files/etc/uci-defaults/96-opennds
 
           mkdir -p files/etc/opkg
 
