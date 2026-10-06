@@ -325,13 +325,33 @@ jobs:
 
           mkdir -p files/etc/uci-defaults
 
+          # Indonesia (Jakarta / WIB, UTC+7).
+          mkdir -p files/etc/config
+          cat > files/etc/config/system <<'EOF'
+          config system
+              option hostname 'OpenWrt'
+              option timezone 'WIB-7'
+              option zonename 'Asia/Jakarta'
+              option ttylogin '0'
+              option log_size '128'
+              option urandom_seed '0'
+
+          config timeserver 'ntp'
+              option enabled '1'
+              option enable_server '0'
+              list server '0.openwrt.pool.ntp.org'
+              list server '1.openwrt.pool.ntp.org'
+              list server '2.openwrt.pool.ntp.org'
+              list server '3.openwrt.pool.ntp.org'
+          EOF
+
           cat > files/etc/uci-defaults/99-default-settings <<'EOF'
           # Generate wireless config if it does not exist yet.
           [ -s /etc/config/wireless ] || /sbin/wifi config
 
           # Default LAN address.
           uci -q set network.lan.proto='static'
-          uci -q set network.lan.ipaddr='192.168.100.1'
+          uci -q set network.lan.ipaddr='192.168.1.1'
           uci -q set network.lan.netmask='255.255.255.0'
           uci -q delete network.lan.gateway
           uci -q delete network.lan.dns
@@ -361,7 +381,7 @@ jobs:
           uci -q set network.voucher='interface'
           uci -q set network.voucher.device='br-voucher'
           uci -q set network.voucher.proto='static'
-          uci -q set network.voucher.ipaddr='192.168.101.1'
+          uci -q set network.voucher.ipaddr='10.10.10.1'
           uci -q set network.voucher.netmask='255.255.255.0'
           uci -q delete network.voucher.gateway
           uci -q delete network.voucher.dns
