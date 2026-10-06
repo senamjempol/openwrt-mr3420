@@ -141,25 +141,27 @@ jobs:
           chmod 755 files/etc/uci-defaults/99-default-settings
 
           cat > files/etc/uci-defaults/98-voucher-hotspot <<'EOF'
-          # Dedicated voucher network for the HOTSPOT AP.
+          # Dedicated voucher bridge for the HOTSPOT AP.
+          # Logical interface: voucher
+          # Linux bridge device: br-voucher
+          uci -q set network.br_voucher='device'
+          uci -q set network.br_voucher.name='br-voucher'
+          uci -q set network.br_voucher.type='bridge'
+
           uci -q set network.voucher='interface'
+          uci -q set network.voucher.device='br-voucher'
           uci -q set network.voucher.proto='static'
           uci -q set network.voucher.ipaddr='192.168.101.1'
           uci -q set network.voucher.netmask='255.255.255.0'
           uci -q delete network.voucher.gateway
           uci -q delete network.voucher.dns
 
-          # DHCP for voucher clients.
-          uci -q add dhcp dhcp
-          voucher_dhcp=$?
-          # Replace the automatically generated anonymous section with explicit values.
-          if [ "$voucher_dhcp" = "0" ]; then
-            section=$(uci show dhcp | sed -n "s/^dhcp\.\(@dhcp\[[0-9]*\]\)=dhcp$/\1/p" | tail -n 1)
-            uci -q set "dhcp.$section.interface=voucher"
-            uci -q set "dhcp.$section.start=100"
-            uci -q set "dhcp.$section.limit=100"
-            uci -q set "dhcp.$section.leasetime=12h"
-          fi
+          # DHCP for voucher clients. Use a named section.
+          uci -q set dhcp.voucher='dhcp'
+          uci -q set dhcp.voucher.interface='voucher'
+          uci -q set dhcp.voucher.start='100'
+          uci -q set dhcp.voucher.limit='100'
+          uci -q set dhcp.voucher.leasetime='12h'
 
           # Add the open, passwordless HOTSPOT AP on the existing radio.
           radio=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p' | head -n 1)
