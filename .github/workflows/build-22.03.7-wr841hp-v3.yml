@@ -164,13 +164,15 @@ jobs:
           # Add the open, passwordless HOTSPOT AP on the existing radio.
           radio=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p' | head -n 1)
           if [ -n "$radio" ]; then
-            wifi_section=$(uci add wireless wifi-iface)
-            uci -q set "wireless.$wifi_section.device=$radio"
-            uci -q set "wireless.$wifi_section.mode=ap"
-            uci -q set "wireless.$wifi_section.ssid=HOTSPOT"
-            uci -q set "wireless.$wifi_section.encryption=none"
-            uci -q set "wireless.$wifi_section.network=voucher"
-            uci -q set "wireless.$wifi_section.disabled=0"
+            # Use a named wifi-iface section so LuCI does not show
+            # the "Wireless configuration migration" warning.
+            uci -q set wireless.voucher_ap='wifi-iface'
+            uci -q set wireless.voucher_ap.device="$radio"
+            uci -q set wireless.voucher_ap.mode='ap'
+            uci -q set wireless.voucher_ap.ssid='HOTSPOT'
+            uci -q set wireless.voucher_ap.encryption='none'
+            uci -q set wireless.voucher_ap.network='voucher'
+            uci -q set wireless.voucher_ap.disabled='0'
           fi
 
           uci -q commit network
