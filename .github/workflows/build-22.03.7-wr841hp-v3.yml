@@ -34,6 +34,21 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Patch nftables packaging for IPv6-disabled build
+        run: |
+          cd openwrt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("include/netfilter.mk")
+          s = p.read_text()
+          old = "$(eval $(if $(NF_KMOD),$(call nf_add,NFT_CORE,CONFIG_NFT_REJECT, $(P_XT)nft_reject $(P_V4)nft_reject_ipv4 $(P_V6)nft_reject_ipv6),))"
+          new = "$(eval $(if $(NF_KMOD),$(call nf_add,NFT_CORE,CONFIG_NFT_REJECT, $(P_XT)nft_reject $(P_V4)nft_reject_ipv4),))"
+          if old not in s:
+              raise SystemExit("Expected OpenWrt 22.03.7 NFT_CORE line was not found; aborting.")
+          p.write_text(s.replace(old, new, 1))
+          PY
+          grep -n "NFT_CORE,CONFIG_NFT_REJECT" include/netfilter.mk
+
       - name: Configure minimal firmware
         run: |
           cd openwrt
