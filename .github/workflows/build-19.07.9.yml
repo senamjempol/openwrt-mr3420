@@ -242,20 +242,21 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure
+      - name: Configure minimal firmware
         run: |
           cd openwrt
           rm -f .config
 
           cat > .config <<'EOF'
+          # Target: TP-Link TL-MR3420 v3, 8MB flash / 32MB-class RAM.
           CONFIG_TARGET_ath79=y
           CONFIG_TARGET_ath79_tiny=y
           CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y
 
-          # Keep the 8MB image lean.
+          # Remove IPv6 to save flash/RAM on this 8MB target.
           # CONFIG_IPV6 is not set
 
-          # LuCI + lightweight Material theme
+          # Essential LuCI.
           CONFIG_PACKAGE_luci-base=y
           CONFIG_PACKAGE_luci-mod-admin-full=y
           CONFIG_PACKAGE_luci-mod-network=y
@@ -267,6 +268,8 @@ jobs:
           CONFIG_PACKAGE_luci-lib-jsonc=y
           CONFIG_PACKAGE_luci-lib-nixio=y
           CONFIG_PACKAGE_libiwinfo-lua=y
+
+          # LuCI/RPC web server.
           CONFIG_PACKAGE_rpcd=y
           CONFIG_PACKAGE_rpcd-mod-file=y
           CONFIG_PACKAGE_rpcd-mod-iwinfo=y
@@ -275,19 +278,19 @@ jobs:
           CONFIG_PACKAGE_uhttpd=y
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
 
-          # Software menu
+          # Software menu / package manager.
           CONFIG_PACKAGE_opkg=y
           CONFIG_PACKAGE_luci-app-opkg=y
 
-          # Network > Firewall
+          # Network > Firewall for OpenWrt 19.07 (iptables stack).
           CONFIG_PACKAGE_firewall=y
           CONFIG_PACKAGE_iptables=y
           CONFIG_PACKAGE_luci-app-firewall=y
 
-          # openNDS captive portal (installed, disabled by default)
+          # openNDS: installed; disabled by default through first-boot init script.
           CONFIG_PACKAGE_opennds=y
 
-          # Huawei M150-2: USB 3G/serial only
+          # Huawei M150-2 USB 3G/serial support only.
           CONFIG_PACKAGE_kmod-usb2=y
           CONFIG_PACKAGE_kmod-usb-serial=y
           CONFIG_PACKAGE_kmod-usb-serial-option=y
@@ -298,17 +301,168 @@ jobs:
           CONFIG_PACKAGE_luci-proto-3g=y
           CONFIG_PACKAGE_luci-proto-ppp=y
 
-          # Indonesian LuCI
+          # Indonesian LuCI.
           CONFIG_LUCI_LANG_id=y
           EOF
 
           make defconfig
 
+          echo "=== Target ==="
           grep '^CONFIG_TARGET_ath79' .config
-          grep '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' .config
-          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|opennds|kmod-usb-serial-option|comgt|usb-modeswitch)|# CONFIG_IPV6)' .config
 
-      - name: Add first-boot WiFi and 19.07.9 package feeds
+          echo "=== Required target ==="
+          grep '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' .config
+
+          echo "=== Important packages ==="
+          grep -E '^(CONFIG_PACKAGE_(luci-theme-material|luci-app-opkg|luci-app-firewall|firewall|iptables|opennds|kmod-usb2|kmod-usb-serial-option|kmod-usb-serial-wwan|comgt|usb-modeswitch|usb-modeswitch-data)|# CONFIG_IPV6)' .config
+
+          test "$(grep -c '^CONFIG_TARGET_ath79_tiny_DEVICE_tplink_tl-mr3420-v3=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_opennds=y' .config)" -eq 1
+          
+      - name: Add first-boot defaults, voucher hotspot and 19.07.9 package feeds
+        run: |
+          cd openwrt
+
+          mkdir -p files/etc/uci-defaults
+
+          cat > files/etc/uci-defaults/99-default-settings <<'EOF'
+          # Generate wireless config if it does not exist yet.
+          [ -s /etc/config/wireless ] || /sbin/wifi config
+
+          # Default LAN address.
+          uci -q set network.lan.proto='static'
+          uci -q set network.lan.ipaddr='192.168.100.1'
+          uci -q set network.lan.netmask='255.255.255.0'
+          uci -q delete network.lan.gateway
+          uci -q delete network.lan.dns
+          uci -q commit network
+
+          # Enable the radio.
+          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
+            uci -q set "wireless.$radio.disabled=0"
+          done
+
+          # Keep the existing/default AP enabled.
+          if uci -q get wireless.@wifi-iface[0].ssid >/dev/null 2>&1; then
+            uci -q set wireless.@wifi-iface[0].disabled='0'
+          fi
+
+          uci -q commit wireless
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/99-default-settings
+
+          cat > files/etc/uci-defaults/98-voucher-hotspot <<'EOF'
+          # Dedicated voucher bridge for the HOTSPOT AP.
+          uci -q set network.br_voucher='device'
+          uci -q set network.br_voucher.name='br-voucher'
+          uci -q set network.br_voucher.type='bridge'
+
+          uci -q set network.voucher='interface'
+          uci -q set network.voucher.device='br-voucher'
+          uci -q set network.voucher.proto='static'
+          uci -q set network.voucher.ipaddr='192.168.101.1'
+          uci -q set network.voucher.netmask='255.255.255.0'
+          uci -q delete network.voucher.gateway
+          uci -q delete network.voucher.dns
+
+          # Small DHCP pool appropriate for the MR3420 v3.
+          uci -q set dhcp.voucher='dhcp'
+          uci -q set dhcp.voucher.interface='voucher'
+          uci -q set dhcp.voucher.start='100'
+          uci -q set dhcp.voucher.limit='30'
+          uci -q set dhcp.voucher.leasetime='12h'
+
+          # Add the open HOTSPOT AP on the first radio.
+          radio=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p' | head -n 1)
+          if [ -n "$radio" ]; then
+            uci -q set wireless.voucher_ap='wifi-iface'
+            uci -q set wireless.voucher_ap.device="$radio"
+            uci -q set wireless.voucher_ap.mode='ap'
+            uci -q set wireless.voucher_ap.ssid='HOTSPOT'
+            uci -q set wireless.voucher_ap.encryption='none'
+            uci -q set wireless.voucher_ap.network='voucher'
+            uci -q set wireless.voucher_ap.disabled='0'
+          fi
+
+          uci -q commit network
+          uci -q commit dhcp
+          uci -q commit wireless
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/98-voucher-hotspot
+
+          cat > files/etc/uci-defaults/97-voucher-firewall <<'EOF'
+          # Voucher clients may reach the Internet but not router management.
+          zone=$(uci add firewall zone)
+          uci -q set "firewall.$zone.name=voucher"
+          uci -q set "firewall.$zone.network=voucher"
+          uci -q set "firewall.$zone.input=REJECT"
+          uci -q set "firewall.$zone.output=ACCEPT"
+          uci -q set "firewall.$zone.forward=REJECT"
+          uci -q set "firewall.$zone.masq=1"
+
+          forward=$(uci add firewall forwarding)
+          uci -q set "firewall.$forward.src=voucher"
+          uci -q set "firewall.$forward.dest=wan"
+
+          # DHCP.
+          rule=$(uci add firewall rule)
+          uci -q set "firewall.$rule.name=Allow-DHCP-Voucher"
+          uci -q set "firewall.$rule.src=voucher"
+          uci -q set "firewall.$rule.proto=udp"
+          uci -q set "firewall.$rule.dest_port=67"
+          uci -q set "firewall.$rule.target=ACCEPT"
+
+          # DNS.
+          rule=$(uci add firewall rule)
+          uci -q set "firewall.$rule.name=Allow-DNS-Voucher"
+          uci -q set "firewall.$rule.src=voucher"
+          uci -q set "firewall.$rule.proto='tcp udp'"
+          uci -q set "firewall.$rule.dest_port=53"
+          uci -q set "firewall.$rule.target=ACCEPT"
+
+          uci -q commit firewall
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/97-voucher-firewall
+
+          # Install OpenNDS configuration and voucher files from repository root.
+          mkdir -p files/etc/config files/etc/opennds files/usr/lib/opennds
+          cp ../opennds files/etc/config/opennds
+          cp ../voucher.sh files/usr/lib/opennds/voucher.sh
+          cp ../vouchers files/etc/opennds/vouchers
+          chmod 755 files/usr/lib/opennds/voucher.sh
+
+          cat > files/etc/uci-defaults/96-disable-opennds <<'EOF'
+          # Keep OpenNDS installed/configured, but disabled by default.
+          if [ -f /etc/config/opennds ]; then
+            uci -q set opennds.@opennds[0].gatewayinterface='br-voucher'
+            uci -q commit opennds
+          fi
+
+          if [ -x /etc/init.d/opennds ]; then
+            /etc/init.d/opennds stop 2>/dev/null || true
+            /etc/init.d/opennds disable 2>/dev/null || true
+          fi
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/96-disable-opennds
+
+          # Keep only the 19.07.9 feeds needed by this build.
+          mkdir -p files/etc/opkg
+          cat > files/etc/opkg/distfeeds.conf <<'EOF'
+          src/gz openwrt_core https://downloads.openwrt.org/releases/19.07.9/targets/ath79/tiny/packages
+          src/gz openwrt_base https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/base
+          src/gz openwrt_luci https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/luci
+          src/gz openwrt_packages https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/packages
+          src/gz openwrt_routing https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/routing
+          src/gz openwrt_telephony https://downloads.openwrt.org/releases/19.07.9/packages/mips_24kc/telephony
+          EOF
+
+          echo "=== Package feeds ==="
+          grep -n '^src/gz' files/etc/opkg/distfeeds.conf
+          
         run: |
           cd openwrt
 
