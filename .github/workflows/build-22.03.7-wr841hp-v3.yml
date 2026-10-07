@@ -108,6 +108,14 @@ jobs:
           CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_nftables-json=y
           CONFIG_PACKAGE_luci-app-firewall=y
+          CONFIG_PACKAGE_kmod-nfnetlink=y
+          CONFIG_PACKAGE_kmod-nf-conntrack=y
+          CONFIG_PACKAGE_kmod-nf-nat=y
+          CONFIG_PACKAGE_kmod-nft-core=y
+          CONFIG_PACKAGE_kmod-nft-fib=y
+          CONFIG_PACKAGE_kmod-nft-nat=y
+          CONFIG_PACKAGE_libnftnl=y
+          CONFIG_PACKAGE_libmnl=y
 
           # dnsmasq-full provides nftset support required by OpenNDS.
           CONFIG_PACKAGE_dnsmasq-full=y
@@ -135,6 +143,12 @@ jobs:
           test "$(grep -c '^CONFIG_PACKAGE_firewall4=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_nftables-json=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_dnsmasq-full=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nft-core=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nft-fib=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nft-nat=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nfnetlink=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nf-conntrack=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_kmod-nf-nat=y' .config)" -eq 1
 
       - name: Add first-boot defaults and package feeds
         run: |
@@ -249,7 +263,7 @@ jobs:
           rule=$(uci add firewall rule)
           uci -q set "firewall.$rule.name=Allow-DNS-Voucher"
           uci -q set "firewall.$rule.src=voucher"
-          uci -q set "firewall.$rule.proto='tcp udp'"
+          uci -q set "firewall.$rule.proto=tcp udp"
           uci -q set "firewall.$rule.dest_port=53"
           uci -q set "firewall.$rule.target=ACCEPT"
 
