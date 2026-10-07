@@ -49,6 +49,19 @@ jobs:
           PY
           grep -n "NFT_CORE,CONFIG_NFT_REJECT" include/netfilter.mk
 
+      - name: Patch firewall4 for IPv6-disabled build
+        run: |
+          cd openwrt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('package/network/config/firewall4/Makefile')
+          s = p.read_text()
+          s2 = s.replace('+kmod-nft-core +kmod-nft-fib +kmod-nft-offload \\', '+kmod-nft-core +kmod-nft-fib \\')
+          if s2 == s:
+              raise SystemExit('firewall4 offload dependency not found')
+          p.write_text(s2)
+          PY
+
       - name: Configure minimal firmware
         run: |
           cd openwrt
@@ -81,7 +94,6 @@ jobs:
           CONFIG_PACKAGE_rpcd-mod-file=y
           CONFIG_PACKAGE_rpcd-mod-iwinfo=y
           CONFIG_PACKAGE_rpcd-mod-luci=y
-          CONFIG_PACKAGE_rpcd-mod-rrdns=y
           CONFIG_PACKAGE_uhttpd=y
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
 
@@ -105,8 +117,6 @@ jobs:
           CONFIG_PACKAGE_opennds=y
           CONFIG_PACKAGE_libmicrohttpd-no-ssl=y
 
-          # Indonesian LuCI.
-          CONFIG_LUCI_LANG_id=y
           EOF
 
           make defconfig
@@ -122,6 +132,7 @@ jobs:
 
           test "$(grep -c '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_opennds=y' .config)" -eq 1
+          test "$(grep -c '^CONFIG_PACKAGE_firewall4=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_nftables-json=y' .config)" -eq 1
           test "$(grep -c '^CONFIG_PACKAGE_dnsmasq-full=y' .config)" -eq 1
 
