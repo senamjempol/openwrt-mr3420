@@ -263,7 +263,14 @@ jobs:
           rule=$(uci add firewall rule)
           uci -q set "firewall.$rule.name=Allow-DNS-Voucher"
           uci -q set "firewall.$rule.src=voucher"
-          uci -q set "firewall.$rule.proto=tcp udp"
+          uci -q set "firewall.$rule.proto=tcp"
+          uci -q set "firewall.$rule.dest_port=53"
+          uci -q set "firewall.$rule.target=ACCEPT"
+
+          rule=$(uci add firewall rule)
+          uci -q set "firewall.$rule.name=Allow-DNS-Voucher-UDP"
+          uci -q set "firewall.$rule.src=voucher"
+          uci -q set "firewall.$rule.proto=udp"
           uci -q set "firewall.$rule.dest_port=53"
           uci -q set "firewall.$rule.target=ACCEPT"
 
@@ -285,25 +292,18 @@ jobs:
           # 97/98/99 create the voucher firewall, bridge and default settings.
           # Therefore OpenNDS must start AFTER them, not as 96-opennds.
           cat > files/etc/uci-defaults/100-opennds <<'EOF'
-          # OpenNDS is installed and enabled by default.
-          # This script deliberately runs after 97/98/99 so br-voucher exists.
+          # OpenNDS is installed but intentionally OFF by default.
+          # Keep the voucher interface configuration ready for manual activation.
           if [ -f /etc/config/opennds ]; then
-            uci -q set opennds.@opennds[0].enabled='1'
+            uci -q set opennds.@opennds[0].enabled='0'
             uci -q set opennds.@opennds[0].gatewayinterface='br-voucher'
             uci -q commit opennds
           fi
 
-          # Wait briefly for the voucher bridge/address to be present.
-          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-            if ip link show br-voucher >/dev/null 2>&1 &&                ip -4 addr show br-voucher | grep -q '192\.168\.101\.1/'; then
-              break
-            fi
-            sleep 1
-          done
-
+          # Make sure OpenNDS does not start automatically or run now.
           if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds enable 2>/dev/null || true
-            /etc/init.d/opennds start 2>/dev/null || true
+            /etc/init.d/opennds stop 2>/dev/null || true
+            /etc/init.d/opennds disable 2>/dev/null || true
           fi
           exit 0
           EOF
