@@ -38,7 +38,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure default OpenWrt base with requested additions
+      - name: Configure OpenWrt defaults with Material and OpenNDS
         run: |
           cd openwrt
           cat > .config <<'EOF'
@@ -73,23 +73,81 @@ jobs:
           grep -q '^CONFIG_PACKAGE_opennds=y$' .config
           grep -q '^CONFIG_PACKAGE_dnsmasq-full=y$' .config
 
-      - name: Keep Wi-Fi enabled and OpenNDS disabled
+      - name: Ensure default LAN Wi-Fi AP and keep OpenNDS disabled
         run: |
           cd openwrt
           mkdir -p files/etc/uci-defaults
           cat > files/etc/uci-defaults/99-requested-defaults <<'EOF'
-          # Preserve default OpenWrt configuration; only ensure Wi-Fi is enabled.
+          # Keep OpenWrt default LAN/DHCP/firewall. Ensure a usable default AP exists.
           [ -s /etc/config/wireless ] || /sbin/wifi config
-          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
+
+          radios="$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p')"
+          [ -n "$radios" ] || {
+            /sbin/wifi config
+            radios="$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p')"
+          }
+
+          for radio in $radios; do
             uci -q set "wireless.$radio.disabled=0"
           done
-          for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-            uci -q set "wireless.$iface.disabled=0"
-          done
+
+          if ! uci -q show wireless | grep -q '=wifi-iface
+
+      - name: Download package sources
+        run: |
+          cd openwrt
+          make -j"$(nproc)" download
+
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make -j"$(nproc)" || make -j1 V=s
+
+      - name: Verify firmware outputs
+        run: |
+          cd openwrt
+          test -d bin/targets/ath79/generic
+          find bin/targets/ath79/generic -maxdepth 1 -type f \( -name '*wr841hp-v3*' -o -name '*manifest' \) -print
+          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-factory.bin' -print -quit)"
+          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-sysupgrade.bin' -print -quit)"
+          manifest="$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3.manifest' -print -quit)"
+          test -n "$manifest"
+          grep -q '^opennds ' "$manifest"
+          grep -q '^luci-base ' "$manifest"
+          grep -q '^luci-theme-material ' "$manifest"
+          grep -q '^dnsmasq-full ' "$manifest"
+          echo "Verified: device images and requested packages are present."
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
+          path: |
+            openwrt/bin/targets/ath79/generic/*wr841hp-v3*
+            openwrt/bin/targets/ath79/generic/*manifest
+          if-no-files-found: error
+          retention-days: 14
+; then
+            radio="$(echo "$radios" | awk 'NR==1 {print; exit}')"
+            if [ -n "$radio" ]; then
+              uci set wireless.default_radio0='wifi-iface'
+              uci set wireless.default_radio0.device="$radio"
+              uci set wireless.default_radio0.mode='ap'
+              uci set wireless.default_radio0.network='lan'
+              uci set wireless.default_radio0.ssid='OpenWrt'
+              uci set wireless.default_radio0.encryption='none'
+              uci set wireless.default_radio0.disabled='0'
+            fi
+          else
+            for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+              uci -q set "wireless.$iface.disabled=0"
+            done
+          fi
+
           uci -q commit wireless
           /sbin/wifi up >/dev/null 2>&1 || true
 
-          # OpenNDS is installed but stays disabled until the user configures/enables it.
+          # OpenNDS is installed but stays disabled until manually configured/enabled.
           if [ -f /etc/config/opennds ]; then
             uci -q set opennds.@opennds[0].enabled='0'
             uci -q commit opennds
