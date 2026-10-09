@@ -91,7 +91,38 @@ jobs:
             uci -q set "wireless.$radio.disabled=0"
           done
 
-          if ! uci -q show wireless | grep -q '=wifi-iface
+          if ! uci -q show wireless | grep -q '=wifi-iface$'; then
+            radio="$(echo "$radios" | awk 'NR==1 {print; exit}')"
+            if [ -n "$radio" ]; then
+              uci set wireless.default_radio0='wifi-iface'
+              uci set wireless.default_radio0.device="$radio"
+              uci set wireless.default_radio0.mode='ap'
+              uci set wireless.default_radio0.network='lan'
+              uci set wireless.default_radio0.ssid='OpenWrt'
+              uci set wireless.default_radio0.encryption='none'
+              uci set wireless.default_radio0.disabled='0'
+            fi
+          else
+            for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+              uci -q set "wireless.$iface.disabled=0"
+            done
+          fi
+
+          uci -q commit wireless
+          /sbin/wifi up >/dev/null 2>&1 || true
+
+          # OpenNDS is installed but stays disabled until manually configured/enabled.
+          if [ -f /etc/config/opennds ]; then
+            uci -q set opennds.@opennds[0].enabled='0'
+            uci -q commit opennds
+          fi
+          if [ -x /etc/init.d/opennds ]; then
+            /etc/init.d/opennds stop >/dev/null 2>&1 || true
+            /etc/init.d/opennds disable >/dev/null 2>&1 || true
+          fi
+          exit 0
+          EOF
+          chmod 755 files/etc/uci-defaults/99-requested-defaults
 
       - name: Download package sources
         run: |
