@@ -38,7 +38,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure minimal firmware with LuCI Material and OpenNDS
+      - name: Configure minimal firmware with native firewall, LuCI Material and OpenNDS
         run: |
           cd openwrt
           rm -f .config
@@ -48,20 +48,21 @@ jobs:
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y
 
-          # Minimal LuCI interface with Material theme and Network > Firewall page.
+          # Minimal LuCI with Material theme and Network > Firewall.
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-app-firewall=y
           CONFIG_PACKAGE_luci-theme-material=y
 
-          # OpenNDS captive portal, kept OFF by the first-boot script.
+          # OpenNDS is installed but kept OFF by first-boot defaults.
           CONFIG_PACKAGE_opennds=y
           CONFIG_PACKAGE_libmicrohttpd-no-ssl=y
 
-          # OpenWrt 22.03 firewall backend and nftables CLI required by OpenNDS.
+          # Use OpenWrt 22.03.7's native firewall stack: firewall4 + nftables.
+          # No custom firewall replacement or custom firewall rules are added here.
           CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_nftables-json=y
 
-          # dnsmasq-full includes nftset support used by OpenNDS on this release.
+          # OpenNDS requires dnsmasq nftset support on this release.
           CONFIG_PACKAGE_dnsmasq-full=y
           # CONFIG_PACKAGE_dnsmasq is not set
 
@@ -140,7 +141,7 @@ jobs:
           grep -q '^firewall4 ' "$manifest"
           grep -q '^nftables-json ' "$manifest"
           grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, firewall4 and dnsmasq-full are in the image."
+          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, native firewall4/nftables and dnsmasq-full are in the image."
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
