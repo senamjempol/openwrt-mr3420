@@ -1,4 +1,4 @@
-name: Build OpenWrt 22.03.7 WR841HP v3 Minimal + LuCI + OpenNDS OFF
+name: Build OpenWrt 22.03.7 WR841HP v3 Minimal + Material + OpenNDS OFF
 
 on:
   workflow_dispatch:
@@ -38,7 +38,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure minimal firmware with LuCI and OpenNDS
+      - name: Configure minimal firmware with LuCI Material and OpenNDS
         run: |
           cd openwrt
           rm -f .config
@@ -48,10 +48,10 @@ jobs:
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y
 
-          # Minimal web interface. Firewall page is under Network > Firewall.
+          # Minimal LuCI interface with Material theme and Network > Firewall page.
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-app-firewall=y
-          CONFIG_PACKAGE_luci-theme-bootstrap=y
+          CONFIG_PACKAGE_luci-theme-material=y
 
           # OpenNDS captive portal, kept OFF by the first-boot script.
           CONFIG_PACKAGE_opennds=y
@@ -76,9 +76,10 @@ jobs:
           grep -q '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y$' .config
 
           echo "=== Required packages ==="
-          grep -E '^(CONFIG_PACKAGE_(luci|luci-app-firewall|luci-theme-bootstrap|opennds|libmicrohttpd-no-ssl|firewall4|nftables-json|dnsmasq-full|dropbear)=y)' .config
+          grep -E '^(CONFIG_PACKAGE_(luci|luci-app-firewall|luci-theme-material|opennds|libmicrohttpd-no-ssl|firewall4|nftables-json|dnsmasq-full|dropbear)=y)' .config
           grep -q '^CONFIG_PACKAGE_luci=y$' .config
           grep -q '^CONFIG_PACKAGE_luci-app-firewall=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-theme-material=y$' .config
           grep -q '^CONFIG_PACKAGE_opennds=y$' .config
           grep -q '^CONFIG_PACKAGE_firewall4=y$' .config
           grep -q '^CONFIG_PACKAGE_nftables-json=y$' .config
@@ -135,15 +136,16 @@ jobs:
           grep -q '^opennds ' "$manifest"
           grep -q '^luci-base ' "$manifest"
           grep -q '^luci-app-firewall ' "$manifest"
+          grep -q '^luci-theme-material ' "$manifest"
           grep -q '^firewall4 ' "$manifest"
           grep -q '^nftables-json ' "$manifest"
           grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI, LuCI firewall page, firewall4 and dnsmasq-full are in the image."
+          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, firewall4 and dnsmasq-full are in the image."
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-22.03.7-wr841hp-v3-minimal-luci-opennds-off
+          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
           path: |
             openwrt/bin/targets/ath79/generic/*wr841hp-v3*
             openwrt/bin/targets/ath79/generic/*manifest
