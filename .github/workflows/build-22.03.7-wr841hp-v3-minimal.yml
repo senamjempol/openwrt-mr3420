@@ -26,7 +26,7 @@ jobs:
           cd openwrt
           git describe --tags --always
 
-      - name: Install package feeds
+      - name: Install OpenNDS package feed
         run: |
           cd openwrt
           cat > feeds.conf.default <<'EOF'
@@ -38,7 +38,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install opennds
 
-      - name: Configure smallest practical firmware
+      - name: Configure minimal firmware
         run: |
           cd openwrt
           rm -f .config
@@ -48,12 +48,10 @@ jobs:
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y
 
-          # Keep the base system lean; do not include LuCI or optional themes.
-          # OpenNDS dependencies and nftables firewall support.
+          # Keep the default lightweight dnsmasq; no LuCI or optional themes.
+          # OpenNDS and its nftables frontend are included.
           CONFIG_PACKAGE_opennds=y
           CONFIG_PACKAGE_nftables-json=y
-          CONFIG_PACKAGE_dnsmasq-full=y
-          # CONFIG_PACKAGE_dnsmasq is not set
 
           # Ensure a usable SSH server is included.
           CONFIG_PACKAGE_dropbear=y
@@ -65,11 +63,10 @@ jobs:
           grep '^CONFIG_TARGET_ath79' .config
           grep -q '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y$' .config
 
-          echo "=== OpenNDS and minimal dependencies ==="
-          grep -E '^(CONFIG_PACKAGE_(opennds|nftables-json|dnsmasq-full|dropbear)=y|# CONFIG_PACKAGE_dnsmasq is not set)' .config
+          echo "=== OpenNDS package selection ==="
+          grep -E '^(CONFIG_PACKAGE_(opennds|nftables-json|dropbear)=y)' .config
           grep -q '^CONFIG_PACKAGE_opennds=y$' .config
           grep -q '^CONFIG_PACKAGE_nftables-json=y$' .config
-          grep -q '^CONFIG_PACKAGE_dnsmasq-full=y$' .config
 
       - name: Set OpenNDS OFF by default
         run: |
