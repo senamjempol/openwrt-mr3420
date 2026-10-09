@@ -38,30 +38,26 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Configure minimal firmware with native firewall, LuCI Material and OpenNDS
+      - name: Configure default OpenWrt base with requested additions
         run: |
           cd openwrt
-          rm -f .config
           cat > .config <<'EOF'
-          # Target: TP-Link TL-WR841HP v3 (ath79/generic)
+          # Device selection only; retain OpenWrt defaults for the base system/firewall.
           CONFIG_TARGET_ath79=y
           CONFIG_TARGET_ath79_generic=y
           CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y
 
-          # Minimal LuCI with Material theme; leave firewall UI/configuration at OpenWrt defaults.
+          # Web UI and requested theme.
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-theme-material=y
 
-          # OpenNDS is installed but kept OFF by first-boot defaults.
+          # Install OpenNDS, but the first-boot script below leaves it disabled.
           CONFIG_PACKAGE_opennds=y
-          CONFIG_PACKAGE_libmicrohttpd-no-ssl=y
 
-          # OpenNDS requires dnsmasq nftset support on this release.
+          # OpenNDS DNS integration needs dnsmasq with nftset support.
+          # This replaces the smaller default dnsmasq package.
           CONFIG_PACKAGE_dnsmasq-full=y
           # CONFIG_PACKAGE_dnsmasq is not set
-
-          # SSH management.
-          CONFIG_PACKAGE_dropbear=y
           EOF
 
           make defconfig
@@ -70,16 +66,19 @@ jobs:
           grep '^CONFIG_TARGET_ath79' .config
           grep -q '^CONFIG_TARGET_ath79_generic_DEVICE_tplink_tl-wr841hp-v3=y$' .config
 
-          echo "=== Required packages ==="
-          grep -E '^(CONFIG_PACKAGE_(luci|luci-theme-material|opennds|libmicrohttpd-no-ssl|dnsmasq-full|dropbear)=y)' .config
-          grep -q '^CONFIG_PACKAGE_luci=y
+          echo "=== Requested package selections ==="
+          grep -E '^(CONFIG_PACKAGE_(luci|luci-theme-material|opennds|dnsmasq-full)=y)' .config
+          grep -q '^CONFIG_PACKAGE_luci=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-theme-material=y$' .config
+          grep -q '^CONFIG_PACKAGE_opennds=y$' .config
+          grep -q '^CONFIG_PACKAGE_dnsmasq-full=y$' .config
 
-      - name: Keep Wi-Fi enabled and OpenNDS disabled by default
+      - name: Keep Wi-Fi enabled and OpenNDS disabled
         run: |
           cd openwrt
           mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-minimal-defaults <<'EOF'
-          # Ensure wireless configuration exists, then enable all radios and APs.
+          cat > files/etc/uci-defaults/99-requested-defaults <<'EOF'
+          # Preserve default OpenWrt configuration; only ensure Wi-Fi is enabled.
           [ -s /etc/config/wireless ] || /sbin/wifi config
           for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
             uci -q set "wireless.$radio.disabled=0"
@@ -90,7 +89,7 @@ jobs:
           uci -q commit wireless
           /sbin/wifi up >/dev/null 2>&1 || true
 
-          # OpenNDS is included but intentionally remains off until manually enabled.
+          # OpenNDS is installed but stays disabled until the user configures/enables it.
           if [ -f /etc/config/opennds ]; then
             uci -q set opennds.@opennds[0].enabled='0'
             uci -q commit opennds
@@ -101,7 +100,7 @@ jobs:
           fi
           exit 0
           EOF
-          chmod 755 files/etc/uci-defaults/99-minimal-defaults
+          chmod 755 files/etc/uci-defaults/99-requested-defaults
 
       - name: Download package sources
         run: |
@@ -113,7 +112,7 @@ jobs:
           cd openwrt
           make -j"$(nproc)" || make -j1 V=s
 
-      - name: Verify firmware outputs and required packages
+      - name: Verify firmware outputs
         run: |
           cd openwrt
           test -d bin/targets/ath79/generic
@@ -126,282 +125,7 @@ jobs:
           grep -q '^luci-base ' "$manifest"
           grep -q '^luci-theme-material ' "$manifest"
           grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material and dnsmasq-full are in the image; firewall settings are left to OpenWrt defaults."
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
-          path: |
-            openwrt/bin/targets/ath79/generic/*wr841hp-v3*
-            openwrt/bin/targets/ath79/generic/*manifest
-          if-no-files-found: error
-          retention-days: 14
- .config
-          grep -q '^CONFIG_PACKAGE_luci-theme-material=y
-
-      - name: Keep Wi-Fi enabled and OpenNDS disabled by default
-        run: |
-          cd openwrt
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-minimal-defaults <<'EOF'
-          # Ensure wireless configuration exists, then enable all radios and APs.
-          [ -s /etc/config/wireless ] || /sbin/wifi config
-          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
-            uci -q set "wireless.$radio.disabled=0"
-          done
-          for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-            uci -q set "wireless.$iface.disabled=0"
-          done
-          uci -q commit wireless
-          /sbin/wifi up >/dev/null 2>&1 || true
-
-          # OpenNDS is included but intentionally remains off until manually enabled.
-          if [ -f /etc/config/opennds ]; then
-            uci -q set opennds.@opennds[0].enabled='0'
-            uci -q commit opennds
-          fi
-          if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds stop >/dev/null 2>&1 || true
-            /etc/init.d/opennds disable >/dev/null 2>&1 || true
-          fi
-          exit 0
-          EOF
-          chmod 755 files/etc/uci-defaults/99-minimal-defaults
-
-      - name: Download package sources
-        run: |
-          cd openwrt
-          make -j"$(nproc)" download
-
-      - name: Build firmware
-        run: |
-          cd openwrt
-          make -j"$(nproc)" || make -j1 V=s
-
-      - name: Verify firmware outputs and required packages
-        run: |
-          cd openwrt
-          test -d bin/targets/ath79/generic
-          find bin/targets/ath79/generic -maxdepth 1 -type f \( -name '*wr841hp-v3*' -o -name '*manifest' \) -print
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-factory.bin' -print -quit)"
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-sysupgrade.bin' -print -quit)"
-          manifest="$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3.manifest' -print -quit)"
-          test -n "$manifest"
-          grep -q '^opennds ' "$manifest"
-          grep -q '^luci-base ' "$manifest"
-          grep -q '^luci-app-firewall ' "$manifest"
-          grep -q '^luci-theme-material ' "$manifest"
-          grep -q '^firewall4 ' "$manifest"
-          grep -q '^nftables-json ' "$manifest"
-          grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, native firewall4/nftables and dnsmasq-full are in the image."
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
-          path: |
-            openwrt/bin/targets/ath79/generic/*wr841hp-v3*
-            openwrt/bin/targets/ath79/generic/*manifest
-          if-no-files-found: error
-          retention-days: 14
- .config
-          grep -q '^CONFIG_PACKAGE_opennds=y
-
-      - name: Keep Wi-Fi enabled and OpenNDS disabled by default
-        run: |
-          cd openwrt
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-minimal-defaults <<'EOF'
-          # Ensure wireless configuration exists, then enable all radios and APs.
-          [ -s /etc/config/wireless ] || /sbin/wifi config
-          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
-            uci -q set "wireless.$radio.disabled=0"
-          done
-          for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-            uci -q set "wireless.$iface.disabled=0"
-          done
-          uci -q commit wireless
-          /sbin/wifi up >/dev/null 2>&1 || true
-
-          # OpenNDS is included but intentionally remains off until manually enabled.
-          if [ -f /etc/config/opennds ]; then
-            uci -q set opennds.@opennds[0].enabled='0'
-            uci -q commit opennds
-          fi
-          if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds stop >/dev/null 2>&1 || true
-            /etc/init.d/opennds disable >/dev/null 2>&1 || true
-          fi
-          exit 0
-          EOF
-          chmod 755 files/etc/uci-defaults/99-minimal-defaults
-
-      - name: Download package sources
-        run: |
-          cd openwrt
-          make -j"$(nproc)" download
-
-      - name: Build firmware
-        run: |
-          cd openwrt
-          make -j"$(nproc)" || make -j1 V=s
-
-      - name: Verify firmware outputs and required packages
-        run: |
-          cd openwrt
-          test -d bin/targets/ath79/generic
-          find bin/targets/ath79/generic -maxdepth 1 -type f \( -name '*wr841hp-v3*' -o -name '*manifest' \) -print
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-factory.bin' -print -quit)"
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-sysupgrade.bin' -print -quit)"
-          manifest="$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3.manifest' -print -quit)"
-          test -n "$manifest"
-          grep -q '^opennds ' "$manifest"
-          grep -q '^luci-base ' "$manifest"
-          grep -q '^luci-app-firewall ' "$manifest"
-          grep -q '^luci-theme-material ' "$manifest"
-          grep -q '^firewall4 ' "$manifest"
-          grep -q '^nftables-json ' "$manifest"
-          grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, native firewall4/nftables and dnsmasq-full are in the image."
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
-          path: |
-            openwrt/bin/targets/ath79/generic/*wr841hp-v3*
-            openwrt/bin/targets/ath79/generic/*manifest
-          if-no-files-found: error
-          retention-days: 14
- .config
-          grep -q '^CONFIG_PACKAGE_dnsmasq-full=y
-
-      - name: Keep Wi-Fi enabled and OpenNDS disabled by default
-        run: |
-          cd openwrt
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-minimal-defaults <<'EOF'
-          # Ensure wireless configuration exists, then enable all radios and APs.
-          [ -s /etc/config/wireless ] || /sbin/wifi config
-          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
-            uci -q set "wireless.$radio.disabled=0"
-          done
-          for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-            uci -q set "wireless.$iface.disabled=0"
-          done
-          uci -q commit wireless
-          /sbin/wifi up >/dev/null 2>&1 || true
-
-          # OpenNDS is included but intentionally remains off until manually enabled.
-          if [ -f /etc/config/opennds ]; then
-            uci -q set opennds.@opennds[0].enabled='0'
-            uci -q commit opennds
-          fi
-          if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds stop >/dev/null 2>&1 || true
-            /etc/init.d/opennds disable >/dev/null 2>&1 || true
-          fi
-          exit 0
-          EOF
-          chmod 755 files/etc/uci-defaults/99-minimal-defaults
-
-      - name: Download package sources
-        run: |
-          cd openwrt
-          make -j"$(nproc)" download
-
-      - name: Build firmware
-        run: |
-          cd openwrt
-          make -j"$(nproc)" || make -j1 V=s
-
-      - name: Verify firmware outputs and required packages
-        run: |
-          cd openwrt
-          test -d bin/targets/ath79/generic
-          find bin/targets/ath79/generic -maxdepth 1 -type f \( -name '*wr841hp-v3*' -o -name '*manifest' \) -print
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-factory.bin' -print -quit)"
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-sysupgrade.bin' -print -quit)"
-          manifest="$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3.manifest' -print -quit)"
-          test -n "$manifest"
-          grep -q '^opennds ' "$manifest"
-          grep -q '^luci-base ' "$manifest"
-          grep -q '^luci-app-firewall ' "$manifest"
-          grep -q '^luci-theme-material ' "$manifest"
-          grep -q '^firewall4 ' "$manifest"
-          grep -q '^nftables-json ' "$manifest"
-          grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, native firewall4/nftables and dnsmasq-full are in the image."
-
-      - name: Upload firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: openwrt-22.03.7-wr841hp-v3-minimal-material-opennds-off
-          path: |
-            openwrt/bin/targets/ath79/generic/*wr841hp-v3*
-            openwrt/bin/targets/ath79/generic/*manifest
-          if-no-files-found: error
-          retention-days: 14
- .config
-
-      - name: Keep Wi-Fi enabled and OpenNDS disabled by default
-        run: |
-          cd openwrt
-          mkdir -p files/etc/uci-defaults
-          cat > files/etc/uci-defaults/99-minimal-defaults <<'EOF'
-          # Ensure wireless configuration exists, then enable all radios and APs.
-          [ -s /etc/config/wireless ] || /sbin/wifi config
-          for radio in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
-            uci -q set "wireless.$radio.disabled=0"
-          done
-          for iface in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
-            uci -q set "wireless.$iface.disabled=0"
-          done
-          uci -q commit wireless
-          /sbin/wifi up >/dev/null 2>&1 || true
-
-          # OpenNDS is included but intentionally remains off until manually enabled.
-          if [ -f /etc/config/opennds ]; then
-            uci -q set opennds.@opennds[0].enabled='0'
-            uci -q commit opennds
-          fi
-          if [ -x /etc/init.d/opennds ]; then
-            /etc/init.d/opennds stop >/dev/null 2>&1 || true
-            /etc/init.d/opennds disable >/dev/null 2>&1 || true
-          fi
-          exit 0
-          EOF
-          chmod 755 files/etc/uci-defaults/99-minimal-defaults
-
-      - name: Download package sources
-        run: |
-          cd openwrt
-          make -j"$(nproc)" download
-
-      - name: Build firmware
-        run: |
-          cd openwrt
-          make -j"$(nproc)" || make -j1 V=s
-
-      - name: Verify firmware outputs and required packages
-        run: |
-          cd openwrt
-          test -d bin/targets/ath79/generic
-          find bin/targets/ath79/generic -maxdepth 1 -type f \( -name '*wr841hp-v3*' -o -name '*manifest' \) -print
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-factory.bin' -print -quit)"
-          test -n "$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3-squashfs-sysupgrade.bin' -print -quit)"
-          manifest="$(find bin/targets/ath79/generic -maxdepth 1 -type f -name '*wr841hp-v3.manifest' -print -quit)"
-          test -n "$manifest"
-          grep -q '^opennds ' "$manifest"
-          grep -q '^luci-base ' "$manifest"
-          grep -q '^luci-app-firewall ' "$manifest"
-          grep -q '^luci-theme-material ' "$manifest"
-          grep -q '^firewall4 ' "$manifest"
-          grep -q '^nftables-json ' "$manifest"
-          grep -q '^dnsmasq-full ' "$manifest"
-          echo "Verified: OpenNDS, LuCI Material, LuCI firewall page, native firewall4/nftables and dnsmasq-full are in the image."
+          echo "Verified: device images and requested packages are present."
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
